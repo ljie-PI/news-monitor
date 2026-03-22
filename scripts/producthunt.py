@@ -1,142 +1,193 @@
 #!/usr/bin/env python3
 """
-Product Hunt Fetcher — RSS feed.
+Product Hunt Fetcher — GraphQL API.
 
-Fetches products from Product Hunt's Atom feed:
-  https://www.producthunt.com/feed
+Fetches daily top products from Product Hunt's GraphQL API:
+  https://api.producthunt.com/v2/api/graphql
 
-Supports filtering by start time and keyword.
-Results are sorted by published time descending.
+Requires environment variables:
+  PRODUCTHUNT_API_TOKEN - Your Product Hunt API access token
 """
 
 import argparse
 import json
+import os
 import re
 import sys
-from datetime import datetime, timezone
 
 import requests
-from bs4 import BeautifulSoup
 
-FEED_URL = "https://www.producthunt.com/feed"
+API_URL = "https://api.producthunt.com/v2/api/graphql"
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-}
+DEFAULT_LIMIT = 30
+DEFAULT_TOPIC = None
 
 
-def parse_datetime(s: str) -> datetime | None:
-    """Parse an ISO 8601 / RFC datetime string into a timezone-aware datetime."""
-    if not s:
-        return None
-    s = s.strip()
-    # Try common formats
-    for fmt in (
-        "%Y-%m-%dT%H:%M:%S%z",
-        "%Y-%m-%dT%H:%M:%S.%f%z",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%dT%H:%M",
-        "%a, %d %b %Y %H:%M:%S %z",  # RSS pubDate format
-        "%a, %d %b %Y %H:%M:%S %Z",
-    ):
+def get_api_token() -> str:
+    api_token = os.environ.get("PRODUCTHUNT_API_TOKEN")
+    if not api_token:
+        print(
+            "Error: PRODUCTHUNT_API_TOKEN environment variable is required.\n"
+            "Get your token at https://api.producthunt.com/v2/oauth/applications",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return api_token
+
+
+def build_query(
+    topic: str | None,
+    first: int,
+    after: str | None = None,
+) -> str:
+    topic_filter = f', topic: "{topic}"' if topic else ""
+    after_filter = f', after: "{after}"' if after else ""
+
+    query = f"""{{
+    posts(order: RANKING{topic_filter}{after_filter}, first: {first}) {{
+        edges {{
+            node {{
+                id
+                name
+                tagline
+                description
+                url
+                website
+                votesCount
+                commentsCount
+                reviewsCount
+                reviewsRating
+                createdAt
+                featuredAt
+                dailyRank
+                topics(first: 5) {{
+                    edges {{
+                        node {{
+                            name
+                            slug
+                        }}
+                    }}
+                }}
+                thumbnail {{
+                    url
+                }}
+            }}
+        }}
+        pageInfo {{
+            hasNextPage
+            endCursor
+        }}
+        totalCount
+    }}
+}}"""
+    return query
+
+
+def fetch_posts(
+    topic: str | None,
+    limit: int,
+) -> list[dict]:
+    api_token = get_api_token()
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_token}",
+        "Host": "api.producthunt.com",
+    }
+
+    all_posts = []
+    cursor = None
+    page_size = min(limit, 20)
+
+    while len(all_posts) < limit:
+        query = build_query(topic, page_size, cursor)
+
         try:
-            dt = datetime.strptime(s, fmt)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
-        except ValueError:
-            continue
-    return None
-
-
-def fetch_feed() -> list[dict]:
-    """Fetch and parse the Product Hunt Atom/RSS feed."""
-    resp = requests.get(FEED_URL, headers=HEADERS, timeout=15)
-    resp.raise_for_status()
-
-    soup = BeautifulSoup(resp.text, "xml")
-    # Fallback if xml parser doesn't find entries
-    if not soup.find("entry") and not soup.find("item"):
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-    items = []
-    for entry in soup.find_all(["entry", "item"]):
-        title_elem = entry.find("title")
-        title = title_elem.get_text(strip=True) if title_elem else ""
-
-        # Link: Atom uses <link href="...">, RSS uses <link>text</link>
-        link_tag = entry.find("link")
-        url = ""
-        if link_tag:
-            url = link_tag.get("href") or link_tag.get_text(strip=True)
-
-        # Author
-        author_elem = entry.find("author")
-        author = ""
-        if author_elem:
-            name_elem = author_elem.find("name")
-            author = (
-                name_elem.get_text(strip=True)
-                if name_elem
-                else author_elem.get_text(strip=True)
+            response = requests.post(
+                API_URL,
+                headers=headers,
+                json={"query": query},
+                timeout=30,
             )
 
-        # Published time
-        pub_elem = entry.find("published") or entry.find("pubDate")
-        published = pub_elem.get_text(strip=True) if pub_elem else ""
+            if response.status_code == 401:
+                print(
+                    "Error: Invalid or expired API token. "
+                    "Check your PRODUCTHUNT_API_TOKEN environment variable.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            elif response.status_code == 429:
+                print(
+                    "Rate limit exceeded. Waiting 60 seconds...",
+                    file=sys.stderr,
+                )
+                import time
 
-        # Updated time
-        upd_elem = entry.find("updated")
-        updated = upd_elem.get_text(strip=True) if upd_elem else ""
+                time.sleep(60)
+                response = requests.post(
+                    API_URL,
+                    headers=headers,
+                    json={"query": query},
+                    timeout=30,
+                )
 
-        # Description / content
-        content_elem = entry.find("content") or entry.find("description")
-        description = ""
-        if content_elem:
-            # In Atom XML, content.string holds the raw HTML as a text node
-            raw_html = content_elem.string or content_elem.get_text()
-            desc_soup = BeautifulSoup(raw_html, "html.parser")
-            # Extract only the first <p> text (the tagline), skip navigation links
-            first_p = desc_soup.find("p")
-            if first_p:
-                description = first_p.get_text(strip=True)
-            else:
-                description = desc_soup.get_text(strip=True)
-            description = re.sub(r"\s+", " ", description).strip()
+            response.raise_for_status()
+            data = response.json()
 
-        items.append(
-            {
-                "title": title,
-                "url": url,
-                "author": author,
-                "published": published,
-                "updated": updated,
-                "description": description,
-            }
-        )
+            if "errors" in data:
+                error_msg = data["errors"][0].get("message", "Unknown error")
+                print(f"GraphQL Error: {error_msg}", file=sys.stderr)
+                sys.exit(1)
 
-    return items
+            posts_data = data.get("data", {}).get("posts", {})
+            edges = posts_data.get("edges", [])
+            page_info = posts_data.get("pageInfo", {})
 
+            for edge in edges:
+                node = edge.get("node", {})
+                topics = [
+                    t["node"]["name"] for t in node.get("topics", {}).get("edges", [])
+                ]
 
-def filter_by_start(items: list[dict], start_dt: datetime) -> list[dict]:
-    """Filter out items published before start_dt."""
-    result = []
-    for item in items:
-        pub_str = item.get("published") or item.get("updated", "")
-        pub_dt = parse_datetime(pub_str)
-        if pub_dt and pub_dt < start_dt:
-            continue
-        # If we can't parse the time, keep the item
-        result.append(item)
-    return result
+                all_posts.append(
+                    {
+                        "id": node.get("id"),
+                        "name": node.get("name"),
+                        "tagline": node.get("tagline"),
+                        "description": node.get("description"),
+                        "url": node.get("url"),
+                        "website": node.get("website"),
+                        "votes_count": node.get("votesCount", 0),
+                        "comments_count": node.get("commentsCount", 0),
+                        "reviews_count": node.get("reviewsCount", 0),
+                        "reviews_rating": node.get("reviewsRating"),
+                        "created_at": node.get("createdAt"),
+                        "featured_at": node.get("featuredAt"),
+                        "daily_rank": node.get("dailyRank"),
+                        "topics": topics,
+                        "thumbnail": (
+                            node.get("thumbnail", {}).get("url")
+                            if node.get("thumbnail")
+                            else None
+                        ),
+                    }
+                )
+
+            if not page_info.get("hasNextPage") or not page_info.get("endCursor"):
+                break
+
+            cursor = page_info["endCursor"]
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching posts: {e}", file=sys.stderr)
+            return []
+
+    all_posts.sort(key=lambda x: x.get("daily_rank", 9999))
+    return all_posts[:limit]
 
 
 def filter_by_keyword(items: list[dict], keyword: str) -> list[dict]:
-    """Filter items by comma-separated keywords (case-insensitive, matches title + description)."""
     if not keyword:
         return items
     keywords = [k.strip() for k in keyword.split(",") if k.strip()]
@@ -147,78 +198,33 @@ def filter_by_keyword(items: list[dict], keyword: str) -> list[dict]:
     return [
         item
         for item in items
-        if regex.search(item.get("title", ""))
-        or regex.search(item.get("description", ""))
+        if regex.search(item.get("name", ""))
+        or regex.search(item.get("tagline", ""))
+        or regex.search(item.get("description", "") or "")
     ]
-
-
-def sort_by_published(items: list[dict]) -> list[dict]:
-    """Sort items by published time descending (newest first)."""
-
-    def sort_key(item: dict) -> float:
-        pub_str = item.get("published") or item.get("updated", "")
-        dt = parse_datetime(pub_str)
-        return dt.timestamp() if dt else 0
-
-    return sorted(items, key=sort_key, reverse=True)
-
-
-def parse_start_time(s: str) -> datetime:
-    """
-    Parse --start value into a timezone-aware datetime (UTC).
-    Supports: YYYY-MM-DD, YYYY-MM-DDTHH:MM, YYYY-MM-DDTHH:MM:SS
-    """
-    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
-        try:
-            dt = datetime.strptime(s, fmt)
-            return dt.replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-    raise ValueError(
-        f"Invalid --start format: {s!r}. "
-        "Expected YYYY-MM-DD or YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS"
-    )
-
-
-def format_output(items: list[dict]) -> str:
-    """Format items as human-readable text."""
-    if not items:
-        return "No products found.\n"
-
-    output = ""
-    for i, item in enumerate(items, 1):
-        output += f"{i}. **{item['title']}**\n"
-        output += f"   by {item['author']} | {item['published']}\n"
-        if item["description"]:
-            desc = item["description"][:200]
-            output += f"   {desc}\n"
-        output += f"   {item['url']}\n\n"
-
-    return output
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Fetch products from Product Hunt RSS feed"
+        description="Fetch products from Product Hunt GraphQL API"
+    )
+    parser.add_argument(
+        "--topic",
+        type=str,
+        default=DEFAULT_TOPIC,
+        help="Filter by topic slug (e.g., 'tech', 'ai')",
     )
     parser.add_argument(
         "--limit",
         type=int,
-        default=0,
-        help="Max products to return, 0 for all (default: 0)",
-    )
-    parser.add_argument(
-        "--start",
-        type=str,
-        default=None,
-        help="Filter out products published before this time "
-        "(YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
+        default=DEFAULT_LIMIT,
+        help=f"Max products to return (default: {DEFAULT_LIMIT})",
     )
     parser.add_argument(
         "--keyword",
         type=str,
         default=None,
-        help="Comma-separated keyword filter (matches title and description)",
+        help="Comma-separated keyword filter (matches name, tagline, description)",
     )
     parser.add_argument(
         "--json",
@@ -228,41 +234,14 @@ def main():
 
     args = parser.parse_args()
 
-    # Parse start time
-    start_dt = None
-    if args.start:
-        try:
-            start_dt = parse_start_time(args.start)
-        except ValueError as e:
-            print(str(e), file=sys.stderr)
-            sys.exit(1)
+    items = fetch_posts(
+        topic=args.topic,
+        limit=args.limit,
+    )
 
-    # Fetch
-    print("Fetching Product Hunt feed...", file=sys.stderr)
-    items = fetch_feed()
-    print(f"Fetched {len(items)} items.", file=sys.stderr)
-
-    # Filter by start time
-    if start_dt:
-        items = filter_by_start(items, start_dt)
-
-    # Filter by keyword
     items = filter_by_keyword(items, args.keyword)
 
-    # Sort by published time descending
-    items = sort_by_published(items)
-
-    # Apply limit
-    if args.limit > 0:
-        items = items[: args.limit]
-
-    print(f"Returning {len(items)} items.", file=sys.stderr)
-
-    # Output
-    if args.json:
-        print(json.dumps(items, indent=2, ensure_ascii=False))
-    else:
-        print(format_output(items))
+    print(json.dumps(items, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

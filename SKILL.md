@@ -1,6 +1,6 @@
 ---
 name: news-monitor
-description: "新闻聚合器 | News Aggregator。从多个来源获取实时新闻：Hacker News（HTML 爬取）、GitHub Trending（多语言+多时间段）、Reddit（RSS）、Product Hunt（RSS）。支持主题聚焦模式（多维度搜索策略）、全网扫描、单源深度扫描。触发词：新闻、news、热点、trending、AI动态、科技快讯、开源趋势。"
+description: "新闻聚合器 | News Aggregator。从多个来源获取实时新闻：Hacker News（HTML 爬取）、GitHub Trending（多语言+多时间段）、Reddit（RSS）、Product Hunt（GraphQL API）。支持主题聚焦模式（多维度搜索策略）、全网扫描、单源深度扫描。触发词：新闻、news、热点、trending、AI动态、科技快讯、开源趋势。"
 metadata:
   openclaw:
     emoji: "📰"
@@ -181,17 +181,23 @@ uv pip install -r {baseDir}/requirements.txt --python {baseDir}/.venv/bin/python
 
 ### Product Hunt（producthunt.py）
 
-独立脚本，从 Product Hunt RSS feed 获取最新产品。支持按时间和关键词过滤。
+独立脚本，通过 Product Hunt GraphQL API 获取每日热门产品（按官方 RANKING 排序）。
+
+**需要设置环境变量**：
+```bash
+export PRODUCTHUNT_API_TOKEN="your_token_here"
+```
+访问 https://api.producthunt.com/v2/oauth/applications 获取 API Token。
 
 ```bash
-# 获取全部产品
+# 默认抓取（每日 top 30）
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py
 
-# 限制数量
-{baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py --limit 10
+# 指定话题
+{baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py --topic tech
 
-# 指定时间范围
-{baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py --start 2026-03-04
+# 调整数量
+{baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py --limit 50
 
 # 关键词过滤
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py --keyword "AI,agent"
@@ -201,18 +207,27 @@ uv pip install -r {baseDir}/requirements.txt --python {baseDir}/.venv/bin/python
 ```
 
 **参数**:
-- `--limit`: 最大返回条目数，0 表示全部（默认: 0）
-- `--start`: 过滤掉早于此时间的产品（格式: `YYYY-MM-DD` 或 `YYYY-MM-DDTHH:MM:SS`）
-- `--keyword`: 逗号分隔的关键词过滤（匹配标题和描述）
+- `--topic`: 按话题 slug 过滤（如 `tech`, `ai`）
+- `--limit`: 最大条目数（默认: 30）
+- `--keyword`: 逗号分隔的关键词过滤（匹配名称、标语、描述）
 - `--json`: JSON 格式输出
 
 **输出字段**:
-- `title`: 产品名称
+- `id`: 产品 ID
+- `name`: 产品名称
+- `tagline`: 标语
+- `description`: 描述
 - `url`: Product Hunt 链接
-- `author`: 提交者
-- `published`: 发布时间
-- `updated`: 更新时间
-- `description`: 产品描述（纯文本）
+- `website`: 产品官网
+- `votes_count`: 点赞数
+- `comments_count`: 评论数
+- `reviews_count`: 评价数
+- `reviews_rating`: 评价评分
+- `created_at`: 发布时间
+- `featured_at`: 精选时间
+- `daily_rank`: 每日排名
+- `topics`: 话题列表
+- `thumbnail`: 缩略图 URL
 
 ## 执行策略
 
@@ -250,11 +265,11 @@ Task(
 
 | 时间范围 | github_trending.py | reddit.py | hackernews.py | producthunt.py |
 |---------|-------------------|-----------|---------------|----------------|
-| 24h（默认）| 始终 `daily,weekly,monthly` | `--sort top --time day` | `--start <24h前>` | `--start <24h前>` |
-| 一周 | 始终 `daily,weekly,monthly` | `--sort top --time week` | `--start <7天前>` | `--start <7天前>` |
-| 一个月 | 始终 `daily,weekly,monthly` | `--sort top --time month` | `--start <30天前>` | `--start <30天前>` |
+| 24h（默认）| 始终 `daily,weekly,monthly` | `--sort top --time day` | `--start <24h前>` | 始终 daily |
+| 一周 | 始终 `daily,weekly,monthly` | `--sort top --time week` | `--start <7天前>` | 始终 daily |
+| 一个月 | 始终 `daily,weekly,monthly` | `--sort top --time month` | `--start <30天前>` | 始终 daily |
 
-> GitHub Trending **始终获取全部三个时间段**，不受用户指定的时间范围影响。
+> GitHub Trending **始终获取全部三个时间段**，Product Hunt 只获取每日热门（top 30），均不受用户指定的时间范围影响。
 
 ### 写入要求
 
@@ -281,7 +296,7 @@ Task(
 - `github_trending_2026-03-07_16.json`
 - `hackernews_week_2026-03-07_16.json`
 - `reddit_week_2026-03-07_16.json`
-- `producthunt_week_2026-03-07_16.json`
+- `producthunt_2026-03-07_16.json`
 
 **时间戳**：与汇总报告 `yyyy-mm-dd_HH.md` 使用相同的时间戳，确保可追溯。
 
