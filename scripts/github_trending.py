@@ -200,15 +200,25 @@ def fetch_multiple_languages(
             for lang in languages
         }
 
+        # Wait for all results, keyed by language (so we can merge deterministically).
+        results_by_lang: dict[str, list[dict]] = {}
         for future in as_completed(futures):
+            lang = futures[future]
             try:
-                repos = future.result()
-                for repo in repos:
-                    if repo["full_name"] not in seen_names:
-                        seen_names.add(repo["full_name"])
-                        all_repos.append(repo)
+                results_by_lang[lang] = future.result()
             except Exception:
-                pass
+                results_by_lang[lang] = []
+
+    # Merge in the input `languages` order (overall first), tagging each repo with
+    # its source page. Repos surfacing on multiple pages keep the first occurrence
+    # (so overall > specific-language order).
+    for lang in languages:
+        for repo in results_by_lang.get(lang, []):
+            if repo["full_name"] in seen_names:
+                continue
+            seen_names.add(repo["full_name"])
+            repo["source_language"] = lang
+            all_repos.append(repo)
 
     return all_repos
 

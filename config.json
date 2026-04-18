@@ -11,6 +11,15 @@
       "Lua",
       "Zig"
     ],
+    "interleave_priority_languages": [
+      "Python",
+      "TypeScript",
+      "Rust",
+      "C++",
+      "C",
+      "Zig"
+    ],
+    "interleave_rounds": 3,
     "language_colors": {
       "Python": "#3572A5",
       "TypeScript": "#2b7489",
