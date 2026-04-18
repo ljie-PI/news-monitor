@@ -26,8 +26,28 @@ import sys
 from typing import Any
 
 import dedup_common
+from _config import get_section
 
 SOURCE = "github"
+
+_FALLBACK_INTERLEAVE_PRIORITY = ["Python", "TypeScript", "Rust", "C++", "C", "Zig"]
+_FALLBACK_INTERLEAVE_ROUNDS = 3
+
+
+def _load_interleave_config() -> tuple[list[str], int]:
+    cfg = get_section("github")
+    prio = cfg.get("interleave_priority_languages")
+    if not isinstance(prio, list) or not prio:
+        prio = list(_FALLBACK_INTERLEAVE_PRIORITY)
+    else:
+        prio = [str(x) for x in prio]
+    rounds = cfg.get("interleave_rounds")
+    if not isinstance(rounds, int) or rounds <= 0:
+        rounds = _FALLBACK_INTERLEAVE_ROUNDS
+    return prio, rounds
+
+
+PRIORITY_LANGUAGES, INTERLEAVE_ROUNDS = _load_interleave_config()
 
 
 def flatten(data: Any) -> list[dict]:
@@ -57,7 +77,50 @@ def split_periods(items: list[dict]) -> dict[str, list[dict]]:
     return periods
 
 
-def format_md(periods: dict[str, list[dict]], top: int) -> tuple[str, list[dict]]:
+def interleave_by_source(
+    items: list[dict],
+    priority_langs: list[str],
+    rounds: int = INTERLEAVE_ROUNDS,
+) -> list[dict]:
+    """
+    Order items by source page:
+      1. All items whose source_language == "" (overall page), in input order
+      2. Round-robin across priority_langs, up to `rounds` rounds
+         (i.e. each priority language contributes at most `rounds` items)
+      3. Any remaining items (non-priority languages, or priority-lang items
+         beyond the `rounds` cut) appended at the tail in input order
+    Backward compat: items without `source_language` field are treated as
+    "overall" (so old raw files still work).
+    """
+    overall: list[dict] = []
+    by_lang: dict[str, list[dict]] = {lang: [] for lang in priority_langs}
+    other: list[dict] = []
+
+    for it in items:
+        src = it.get("source_language")
+        if src is None or src == "":
+            overall.append(it)
+        elif src in by_lang:
+            by_lang[src].append(it)
+        else:
+            other.append(it)
+
+    interleaved: list[dict] = []
+    for r in range(rounds):
+        for lang in priority_langs:
+            bucket = by_lang[lang]
+            if r < len(bucket):
+                interleaved.append(bucket[r])
+
+    # Remaining priority-lang items (beyond `rounds`) go to tail in lang order.
+    priority_tail: list[dict] = []
+    for lang in priority_langs:
+        priority_tail.extend(by_lang[lang][rounds:])
+
+    return overall + interleaved + priority_tail + other
+
+
+def format_md(periods: dict[str, list[dict]]) -> tuple[str, list[dict]]:
     title_map = {"today": "Today", "this week": "This Week", "this month": "This Month"}
     order = ["today", "this week", "this month", "other"]
 
@@ -67,12 +130,11 @@ def format_md(periods: dict[str, list[dict]], top: int) -> tuple[str, list[dict]
         items = periods.get(period) or []
         if not items:
             continue
-        chosen = items[:top]
-        output_items.extend(chosen)
+        output_items.extend(items)
 
         section_title = title_map.get(period, period.title())
         lines = [f"# {section_title}", ""]
-        for it in chosen:
+        for it in items:
             name = it.get("full_name") or ""
             url = it.get("html_url") or ""
             stars = it.get("period_stars") or 0
@@ -86,17 +148,14 @@ def format_md(periods: dict[str, list[dict]], top: int) -> tuple[str, list[dict]
     return "\n".join(blocks).strip(), output_items
 
 
-def format_json(periods: dict[str, list[dict]], top: int) -> tuple[str, list[dict]]:
-    out: dict[str, list[dict]] = {}
+def format_json(periods: dict[str, list[dict]]) -> tuple[str, list[dict]]:
     output_items: list[dict] = []
-    for period, items in periods.items():
-        chosen = items[:top]
-        out[period] = chosen
-        output_items.extend(chosen)
+    for items in periods.values():
+        output_items.extend(items)
     payload = {
         "source": SOURCE,
         "generated_at": dedup_common.today_str(),
-        "top_by_period": out,
+        "top_by_period": dict(periods),
     }
     return json.dumps(payload, ensure_ascii=False, indent=2), output_items
 
@@ -117,13 +176,20 @@ def main() -> None:
     items = flatten(raw)
 
     fullset = dedup_common.load_latest_snapshot(SOURCE)
-    new_items = [i for i in items if is_new(i, fullset)]
-    periods = split_periods(new_items)
+
+    # Flow (per user spec): split by period → interleave by source_language
+    # → filter against fullset → take top N.
+    by_period_all = split_periods(items)
+    top_by_period: dict[str, list[dict]] = {}
+    for period, period_items in by_period_all.items():
+        interleaved = interleave_by_source(period_items, PRIORITY_LANGUAGES)
+        new_items = [i for i in interleaved if is_new(i, fullset)]
+        top_by_period[period] = new_items[: args.top]
 
     if args.json:
-        text, output_items = format_json(periods, args.top)
+        text, output_items = format_json(top_by_period)
     else:
-        text, output_items = format_md(periods, args.top)
+        text, output_items = format_md(top_by_period)
 
     print(text)
 
