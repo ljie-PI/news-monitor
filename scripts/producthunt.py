@@ -17,10 +17,15 @@ import sys
 
 import requests
 
+from _config import get_section
+
 API_URL = "https://api.producthunt.com/v2/api/graphql"
 
-DEFAULT_LIMIT = 30
-DEFAULT_TOPIC = None
+_PH_CFG = get_section("producthunt")
+
+# Override via config.json: producthunt.{default_limit,default_topic}
+DEFAULT_LIMIT = _PH_CFG.get("default_limit") or 30
+DEFAULT_TOPIC = _PH_CFG.get("default_topic")  # may be None
 
 
 def get_api_token() -> str:

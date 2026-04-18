@@ -16,19 +16,24 @@ import urllib.parse
 import requests
 from bs4 import BeautifulSoup
 
+from _config import get_section
+
 DEFAULT_TIMEOUT = 15
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
+_REDDIT_CFG = get_section("reddit")
+
 # Fallback: Reddit blocks unauthenticated RSS/JSON in some regions.
 # Redlib instances proxy Reddit content without JS challenges.
-REDLIB_BASES = [
+# Override via config.json: reddit.redlib_bases.
+REDLIB_BASES = _REDDIT_CFG.get("redlib_bases") or [
     "https://redlib.privacyredirect.com",
 ]
 
-DEFAULT_SUBREDDITS = [
+_FALLBACK_SUBREDDITS = [
     "AI_Agents",
     "aigamedev",
     "algotrading",
@@ -59,6 +64,21 @@ DEFAULT_SUBREDDITS = [
     "unsloth",
     "vibecoding",
 ]
+
+
+def _default_subreddits_from_categories() -> list[str]:
+    """Flatten + dedup + case-insensitively sort all subreddits from
+    config.json reddit.categories. Returns [] when categories absent."""
+    cats = _REDDIT_CFG.get("categories") or {}
+    if not isinstance(cats, dict):
+        return []
+    flat = {s for vs in cats.values() if isinstance(vs, list) for s in vs}
+    return sorted(flat, key=str.lower)
+
+
+# Default subreddits = derived from categories (avoids drift), with hard-coded
+# fallback when reddit.categories is missing from config.json.
+DEFAULT_SUBREDDITS = _default_subreddits_from_categories() or _FALLBACK_SUBREDDITS
 
 
 def parse_entries(xml_text: str, subreddit: str) -> list[dict]:

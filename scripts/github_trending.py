@@ -15,13 +15,19 @@ from urllib.parse import quote
 import requests
 from bs4 import BeautifulSoup
 
+from _config import get_section
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-# Language colors (subset)
-LANGUAGE_COLORS = {
+DEFAULT_TIMEOUT = 10
+
+_GH_CFG = get_section("github")
+
+# Language colors (subset). Override via config.json: github.language_colors.
+LANGUAGE_COLORS = _GH_CFG.get("language_colors") or {
     "Python": "#3572A5",
     "TypeScript": "#2b7489",
     "JavaScript": "#f1e05a",
@@ -37,10 +43,11 @@ LANGUAGE_COLORS = {
     "Zig": "#ec915c",
 }
 
-DEFAULT_TIMEOUT = 10
-
-# Default languages to fetch (overall is always included automatically)
-DEFAULT_LANGUAGES = ["Python", "TypeScript", "Rust", "C++", "C", "Java", "Go", "Lua", "Zig"]
+# Default languages to fetch (overall is always included automatically).
+# Override via config.json: github.default_languages.
+DEFAULT_LANGUAGES = _GH_CFG.get("default_languages") or [
+    "Python", "TypeScript", "Rust", "C++", "C", "Java", "Go", "Lua", "Zig",
+]
 
 
 def parse_trending_html(html: str) -> list[dict]:
