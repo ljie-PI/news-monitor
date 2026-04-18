@@ -2,8 +2,16 @@
 """
 Product Hunt Fetcher — GraphQL API.
 
-Fetches daily top products from Product Hunt's GraphQL API:
+Fetches top products from Product Hunt's GraphQL API:
   https://api.producthunt.com/v2/api/graphql
+
+Supports multiple time periods via `--period`:
+  - daily: default Product Hunt ranking (`order: RANKING`, no time filter)
+  - weekly: top-voted products of the past 7 days
+    (`order: VOTES`, `postedAfter: <7 days ago>`)
+
+Output is a dict keyed by period, each value a list of product dicts
+tagged with `period_range` ("daily" or "weekly").
 
 Requires environment variables:
   PRODUCTHUNT_API_TOKEN - Your Product Hunt API access token
@@ -14,6 +22,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -23,9 +32,13 @@ API_URL = "https://api.producthunt.com/v2/api/graphql"
 
 _PH_CFG = get_section("producthunt")
 
-# Override via config.json: producthunt.{default_limit,default_topic}
+# Override via config.json: producthunt.{default_limit,default_topic,default_periods}
 DEFAULT_LIMIT = _PH_CFG.get("default_limit") or 30
 DEFAULT_TOPIC = _PH_CFG.get("default_topic")  # may be None
+DEFAULT_PERIODS = _PH_CFG.get("default_periods") or "daily,weekly"
+
+_VALID_PERIODS = {"daily", "weekly"}
+_WEEK_DAYS = 7
 
 
 def get_api_token() -> str:
@@ -44,12 +57,17 @@ def build_query(
     topic: str | None,
     first: int,
     after: str | None = None,
+    order: str = "RANKING",
+    posted_after: str | None = None,
 ) -> str:
     topic_filter = f', topic: "{topic}"' if topic else ""
     after_filter = f', after: "{after}"' if after else ""
+    posted_after_filter = (
+        f', postedAfter: "{posted_after}"' if posted_after else ""
+    )
 
     query = f"""{{
-    posts(order: RANKING{topic_filter}{after_filter}, first: {first}) {{
+    posts(order: {order}{topic_filter}{after_filter}{posted_after_filter}, first: {first}) {{
         edges {{
             node {{
                 id
@@ -91,6 +109,9 @@ def build_query(
 def fetch_posts(
     topic: str | None,
     limit: int,
+    order: str = "RANKING",
+    posted_after: str | None = None,
+    period_tag: str = "daily",
 ) -> list[dict]:
     api_token = get_api_token()
     headers = {
@@ -100,12 +121,12 @@ def fetch_posts(
         "Host": "api.producthunt.com",
     }
 
-    all_posts = []
-    cursor = None
+    all_posts: list[dict] = []
+    cursor: str | None = None
     page_size = min(limit, 20)
 
     while len(all_posts) < limit:
-        query = build_query(topic, page_size, cursor)
+        query = build_query(topic, page_size, cursor, order, posted_after)
 
         try:
             response = requests.post(
@@ -176,6 +197,7 @@ def fetch_posts(
                             if node.get("thumbnail")
                             else None
                         ),
+                        "period_range": period_tag,
                     }
                 )
 
@@ -188,7 +210,11 @@ def fetch_posts(
             print(f"Error fetching posts: {e}", file=sys.stderr)
             return []
 
-    all_posts.sort(key=lambda x: x.get("daily_rank", 9999))
+    # For daily, preserve PH ranking; for weekly, votes-desc already guaranteed by API.
+    if period_tag == "daily":
+        all_posts.sort(key=lambda x: x.get("daily_rank", 9999) or 9999)
+    else:
+        all_posts.sort(key=lambda x: x.get("votes_count", 0) or 0, reverse=True)
     return all_posts[:limit]
 
 
@@ -209,6 +235,33 @@ def filter_by_keyword(items: list[dict], keyword: str) -> list[dict]:
     ]
 
 
+def fetch_period(
+    period: str,
+    topic: str | None,
+    limit: int,
+) -> list[dict]:
+    if period == "daily":
+        return fetch_posts(
+            topic=topic,
+            limit=limit,
+            order="RANKING",
+            posted_after=None,
+            period_tag="daily",
+        )
+    if period == "weekly":
+        posted_after = (
+            datetime.now(timezone.utc) - timedelta(days=_WEEK_DAYS)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return fetch_posts(
+            topic=topic,
+            limit=limit,
+            order="VOTES",
+            posted_after=posted_after,
+            period_tag="weekly",
+        )
+    raise ValueError(f"Unsupported period: {period}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Fetch products from Product Hunt GraphQL API"
@@ -220,10 +273,16 @@ def main():
         help="Filter by topic slug (e.g., 'tech', 'ai')",
     )
     parser.add_argument(
+        "--period",
+        type=str,
+        default=DEFAULT_PERIODS,
+        help=f"Comma-separated time periods: daily,weekly (default: {DEFAULT_PERIODS})",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=DEFAULT_LIMIT,
-        help=f"Max products to return (default: {DEFAULT_LIMIT})",
+        help=f"Max products to return per period (default: {DEFAULT_LIMIT})",
     )
     parser.add_argument(
         "--keyword",
@@ -239,14 +298,26 @@ def main():
 
     args = parser.parse_args()
 
-    items = fetch_posts(
-        topic=args.topic,
-        limit=args.limit,
-    )
+    periods = [p.strip() for p in args.period.split(",") if p.strip()]
+    for p in periods:
+        if p not in _VALID_PERIODS:
+            print(
+                f"Invalid period: {p}. Must be one of {sorted(_VALID_PERIODS)}.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    items = filter_by_keyword(items, args.keyword)
+    results: dict[str, list[dict]] = {}
+    for period in periods:
+        items = fetch_period(
+            period=period,
+            topic=args.topic,
+            limit=args.limit,
+        )
+        items = filter_by_keyword(items, args.keyword)
+        results[period] = items
 
-    print(json.dumps(items, ensure_ascii=False, indent=2))
+    print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

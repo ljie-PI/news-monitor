@@ -44,15 +44,15 @@ uv pip install -r {baseDir}/requirements.txt --python {baseDir}/.venv/bin/python
 
 独立脚本，专用于获取 GitHub Trending 项目。支持按编程语言和时间段过滤，多语言并发抓取。
 
-**始终同时获取 daily、weekly、monthly 三个时间段的结果**（脚本默认行为）。task 描述中可指定语言覆盖默认列表，但时间段不需要用户指定。
+**始终同时获取 daily、weekly 两个时间段的结果**（脚本默认行为）。task 描述中可指定语言覆盖默认列表，但时间段不需要用户指定。
 
 默认抓取语言：overall（不限语言）、Python、TypeScript、Rust、C++、C、Java、Go、Lua、Zig。overall 始终自动包含。可在仓库根 `config.json` 的 `github.default_languages` 中调整。
 
 ```bash
-# 默认抓取（overall + 9 种语言，daily+weekly+monthly）
+# 默认抓取（overall + 9 种语言，daily+weekly）
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/github_trending.py
 
-# 指定语言（overall 仍会自动包含，仍获取三个时间段）
+# 指定语言（overall 仍会自动包含，仍获取两个时间段）
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/github_trending.py --languages Python,Go,Rust
 
 # 仅获取单个时间段（不推荐，特殊场景使用）
@@ -64,9 +64,9 @@ uv pip install -r {baseDir}/requirements.txt --python {baseDir}/.venv/bin/python
 
 **参数**:
 - `--languages`: 逗号分隔的语言列表（默认: `Python,TypeScript,Rust,C++,C,Java,Go,Lua,Zig`，overall 始终自动包含）
-- `--since`: 逗号分隔的时间段（默认: `daily,weekly,monthly`，即同时获取三个时间段）
+- `--since`: 逗号分隔的时间段，可选 `daily`/`weekly`/`monthly`（默认: `daily,weekly`）
 - `--limit`: 每个语言的最大条目数 (默认 10)
-- `--json`: JSON 格式输出（按时间段分组为 `{"daily": [...], "weekly": [...], "monthly": [...]}`)
+- `--json`: JSON 格式输出（按时间段分组为 `{"daily": [...], "weekly": [...]}`)
 
 **输出字段**:
 - `full_name`: owner/repo
@@ -181,7 +181,11 @@ uv pip install -r {baseDir}/requirements.txt --python {baseDir}/.venv/bin/python
 
 ### Product Hunt（producthunt.py）
 
-独立脚本，通过 Product Hunt GraphQL API 获取每日热门产品（按官方 RANKING 排序）。
+独立脚本，通过 Product Hunt GraphQL API 获取热门产品。支持两个时间段：
+- **daily**（默认）：按官方 RANKING 排序，当前上榜产品
+- **weekly**：`order: VOTES` + `postedAfter: <7 天前>`，过去一周票数最高的产品
+
+**始终同时获取 daily、weekly 两个时间段的结果**（脚本默认行为）。
 
 **需要设置环境变量**：
 ```bash
@@ -190,27 +194,28 @@ export PRODUCTHUNT_API_TOKEN="your_token_here"
 访问 https://api.producthunt.com/v2/oauth/applications 获取 API Token。
 
 ```bash
-# 默认抓取（每日 top 30）
+# 默认抓取（daily + weekly 各 top 30）
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py
 
 # 指定话题
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py --topic tech
 
-# 调整数量
+# 调整每个 period 的数量
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py --limit 50
 
 # 关键词过滤
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py --keyword "AI,agent"
 
-# JSON 输出
-{baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py --json
+# 仅获取单个时间段（不推荐，特殊场景使用）
+{baseDir}/.venv/bin/python3 {baseDir}/scripts/producthunt.py --period daily
 ```
 
 **参数**:
 - `--topic`: 按话题 slug 过滤（如 `tech`, `ai`）
-- `--limit`: 最大条目数（默认: 30）
+- `--period`: 逗号分隔的时间段，可选 `daily`/`weekly`（默认: `daily,weekly`）
+- `--limit`: 每个 period 的最大条目数（默认: 30）
 - `--keyword`: 逗号分隔的关键词过滤（匹配名称、标语、描述）
-- `--json`: JSON 格式输出
+- `--json`: JSON 格式输出（当前 stdout 始终为 JSON，按时间段分组为 `{"daily": [...], "weekly": [...]}`）
 
 **输出字段**:
 - `id`: 产品 ID
@@ -295,11 +300,11 @@ Task(
 
 | 时间范围 | github_trending.py | reddit.py | hackernews.py | producthunt.py |
 |---------|-------------------|-----------|---------------|----------------|
-| 24h（默认）| 始终 `daily,weekly,monthly` | `--sort top --time day` | `--start <24h前>` | 始终 daily |
-| 一周 | 始终 `daily,weekly,monthly` | `--sort top --time week` | `--start <7天前>` | 始终 daily |
-| 一个月 | 始终 `daily,weekly,monthly` | `--sort top --time month` | `--start <30天前>` | 始终 daily |
+| 24h（默认）| 始终 `daily,weekly` | `--sort top --time day` | `--start <24h前>` | 始终 `daily,weekly` |
+| 一周 | 始终 `daily,weekly` | `--sort top --time week` | `--start <7天前>` | 始终 `daily,weekly` |
+| 一个月 | 始终 `daily,weekly` | `--sort top --time month` | `--start <30天前>` | 始终 `daily,weekly` |
 
-> GitHub Trending **始终获取全部三个时间段**，Product Hunt 只获取每日热门（top 30），均不受用户指定的时间范围影响。
+> GitHub Trending 和 Product Hunt **始终同时获取 daily 和 weekly 两个时间段**，均不受用户指定的时间范围影响。
 
 ### 每条 item 的内容标准
 
@@ -338,10 +343,10 @@ Task(
 **命名格式**: `{source}_{period}_yyyy-mm-dd_HH.json`
 
 例如：
-- `github_trending_2026-03-07_16.json`
+- `github_trending_daily_2026-03-07_16.json`、`github_trending_weekly_2026-03-07_16.json`
 - `hackernews_week_2026-03-07_16.json`
 - `reddit_week_2026-03-07_16.json`
-- `producthunt_2026-03-07_16.json`
+- `producthunt_daily_2026-03-07_16.json`、`producthunt_weekly_2026-03-07_16.json`
 
 **时间戳**：与同次运行的 per-source 报告 `{source}_yyyy-mm-dd_HH.md` 使用相同的时间戳，确保可追溯。
 
