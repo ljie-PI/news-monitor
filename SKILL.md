@@ -279,7 +279,13 @@ Task(
 
 **输出路径**: `{workDir}/news-monitor/`
 
-**文件命名**: `yyyy-mm-dd_HH.md`（例：`2026-03-04_16.md`、`2026-03-05_09.md`）
+**文件命名**: 按数据源分文件，每个跑过的源一份 Markdown：
+
+- `{source}_yyyy-mm-dd_HH.md`，其中 `source ∈ {github, hackernews, reddit, producthunt}`
+- 例：`github_2026-03-04_06.md`、`hackernews_2026-03-04_06.md`、`reddit_2026-03-04_06.md`、`producthunt_2026-03-04_06.md`
+
+> **定时任务必须 per-source**（每个源一份文件、便于"一文件一条飞书消息"分发）。
+> 用户手动触发若明确要求一份合并文件，可额外输出 `yyyy-mm-dd_HH.md`，但不替代 per-source 文件。
 
 ### 时间范围
 
@@ -317,7 +323,7 @@ Task(
 2. 对每条 item 并行调用 `web_fetch` 生成 ~100 字描述
 3. 拼装为 markdown 报告
 4. 确保输出目录存在（`mkdir -p {workDir}/news-monitor/`）
-5. 写入 `{workDir}/news-monitor/yyyy-mm-dd_HH.md`
+5. 为每个跑过的源分别写入 `{workDir}/news-monitor/{source}_yyyy-mm-dd_HH.md`
 
 ### 完整性
 
@@ -337,13 +343,13 @@ Task(
 - `reddit_week_2026-03-07_16.json`
 - `producthunt_2026-03-07_16.json`
 
-**时间戳**：与汇总报告 `yyyy-mm-dd_HH.md` 使用相同的时间戳，确保可追溯。
+**时间戳**：与同次运行的 per-source 报告 `{source}_yyyy-mm-dd_HH.md` 使用相同的时间戳，确保可追溯。
 
 **执行顺序**：
 1. 并行执行所有 fetch 脚本获取 JSON 数据
 2. 保存各数据源的 raw JSON 文件（带时间后缀）
 3. 并行调用 `web_fetch` 为每条 item 生成 ~100 字描述
-4. 拼装并写入汇总报告 md 文件
+4. 按平台拼装并分别写入 4 份 per-source md 文件 `{source}_yyyy-mm-dd_HH.md`
 
 ## 去重与 Top 深度解读
 
