@@ -253,8 +253,8 @@ def main():
     parser.add_argument(
         "--since",
         type=str,
-        default="daily,weekly,monthly",
-        help="Comma-separated time periods: daily,weekly,monthly (default: daily,weekly,monthly)",
+        default="daily,weekly",
+        help="Comma-separated time periods: daily,weekly,monthly (default: daily,weekly)",
     )
     parser.add_argument(
         "--limit",
