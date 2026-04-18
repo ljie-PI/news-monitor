@@ -349,7 +349,7 @@ Task(
 1. 并行执行所有 fetch 脚本获取 JSON 数据
 2. 保存各数据源的 raw JSON 文件（带时间后缀）
 3. 并行调用 `web_fetch` 为每条 item 生成 ~100 字描述
-4. 拼装并写入汇总报告 md 文件
+4. 按平台拼装并分别写入 4 份 per-source md 文件 `{source}_yyyy-mm-dd_HH.md`
 
 ## 去重与 Top 深度解读
 
