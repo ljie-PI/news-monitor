@@ -7,9 +7,10 @@ No authentication required.
 
 import argparse
 import json
+import random
+import subprocess
 import sys
 import time
-import subprocess
 import urllib.parse
 
 import requests
@@ -28,25 +29,35 @@ REDLIB_BASES = [
 ]
 
 DEFAULT_SUBREDDITS = [
-    "LLM",
-    "ComputerVision",
-    "LanguageTechnology",
-    "MachineLearning",
+    "AI_Agents",
+    "aigamedev",
+    "algotrading",
+    "artificial",
+    "browsers",
     "ChatGPT",
     "ClaudeAI",
-    "openclaw",
-    "vibecoding",
     "ClaudeCode",
-    "GithubCopilot",
-    "opencodeCLI",
     "CLine",
+    "computervision",
+    "GithubCopilot",
+    "godot",
+    "IndieDev",
+    "IndieGaming",
     "java",
-    "rust",
+    "LanguageTechnology",
+    "LLM",
+    "LocalLLaMA",
+    "LocalLLM",
     "lua",
-    "algotrading",
+    "MachineLearning",
+    "openclaw",
+    "OpenClawUsers",
+    "opencodeCLI",
     "quant",
-    "browsers",
     "robloxgamedev",
+    "rust",
+    "unsloth",
+    "vibecoding",
 ]
 
 
@@ -144,7 +155,9 @@ def parse_entries(xml_text: str, subreddit: str) -> list[dict]:
     return posts
 
 
-def _curl_get(url: str, params: dict[str, str | int] | None = None, timeout: int = 30) -> str:
+def _curl_get(
+    url: str, params: dict[str, str | int] | None = None, timeout: int = 30
+) -> str:
     """Fetch URL using curl (workaround for Python TLS issues with some hosts)."""
     q = urllib.parse.urlencode(params or {})
     full_url = url + ("?" + q if q else "")
@@ -162,10 +175,14 @@ def _curl_get(url: str, params: dict[str, str | int] | None = None, timeout: int
         )
         return out.decode("utf-8", errors="replace")
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"curl failed for {full_url}: {e.output.decode('utf-8', errors='replace')[:200]}")
+        raise RuntimeError(
+            f"curl failed for {full_url}: {e.output.decode('utf-8', errors='replace')[:200]}"
+        )
 
 
-def _fetch_redlib_json(subreddit: str, sort: str, time_filter: str, limit: int) -> list[dict]:
+def _fetch_redlib_json(
+    subreddit: str, sort: str, time_filter: str, limit: int
+) -> list[dict]:
     params: dict[str, str | int] = {"limit": min(limit, 100)}
     if sort == "top":
         params["t"] = time_filter
@@ -184,7 +201,9 @@ def _fetch_redlib_json(subreddit: str, sort: str, time_filter: str, limit: int) 
                 title = str(data.get("title") or "")
                 author = str(data.get("author") or "")
                 permalink_path = str(data.get("permalink") or "")
-                permalink = "https://www.reddit.com" + permalink_path if permalink_path else ""
+                permalink = (
+                    "https://www.reddit.com" + permalink_path if permalink_path else ""
+                )
                 external_url = str(data.get("url") or "")
                 # if it's a self post, url points to reddit; we keep empty to match original behavior
                 if permalink and external_url == permalink:
@@ -197,7 +216,9 @@ def _fetch_redlib_json(subreddit: str, sort: str, time_filter: str, limit: int) 
                 published = ""
                 created_utc = data.get("created_utc")
                 if isinstance(created_utc, (int, float)):
-                    published = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(created_utc))
+                    published = time.strftime(
+                        "%Y-%m-%dT%H:%M:%SZ", time.gmtime(created_utc)
+                    )
 
                 posts.append(
                     {
@@ -205,7 +226,9 @@ def _fetch_redlib_json(subreddit: str, sort: str, time_filter: str, limit: int) 
                         "subreddit": subreddit,
                         "title": title,
                         "author": author,
-                        "url": external_url if not external_url.startswith('https://www.reddit.com') else "",
+                        "url": external_url
+                        if not external_url.startswith("https://www.reddit.com")
+                        else "",
                         "permalink": permalink,
                         "published": published,
                         "selftext": selftext.replace("\n", " ").strip(),
@@ -265,11 +288,11 @@ def fetch_posts(
 
             all_posts.extend(posts)
 
-            # Be polite to Reddit's servers
-            time.sleep(1)
-
         except Exception as e:
             print(f"Error fetching r/{subreddit}: {e}", file=sys.stderr)
+        finally:
+            # Be polite to Reddit's servers
+            time.sleep(random.uniform(1.5, 3.0))
 
     return all_posts
 
@@ -325,10 +348,10 @@ def search_posts(
                     seen_ids.add(post["id"])
                     all_posts.append(post)
 
-            time.sleep(1)
-
         except Exception as e:
             print(f"Error searching r/{subreddit}: {e}", file=sys.stderr)
+        finally:
+            time.sleep(random.uniform(1.5, 3.0))
 
     return all_posts
 

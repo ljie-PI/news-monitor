@@ -34,12 +34,13 @@ LANGUAGE_COLORS = {
     "Swift": "#fa7343",
     "Kotlin": "#A97BFF",
     "Lua": "#000080",
+    "Zig": "#ec915c",
 }
 
 DEFAULT_TIMEOUT = 10
 
 # Default languages to fetch (overall is always included automatically)
-DEFAULT_LANGUAGES = ["Python", "TypeScript", "Rust", "C++", "C", "Java", "Go", "Lua"]
+DEFAULT_LANGUAGES = ["Python", "TypeScript", "Rust", "C++", "C", "Java", "Go", "Lua", "Zig"]
 
 
 def parse_trending_html(html: str) -> list[dict]:
