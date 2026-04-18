@@ -46,10 +46,10 @@ uv pip install -r {baseDir}/requirements.txt --python {baseDir}/.venv/bin/python
 
 **始终同时获取 daily、weekly、monthly 三个时间段的结果**（脚本默认行为）。task 描述中可指定语言覆盖默认列表，但时间段不需要用户指定。
 
-默认抓取语言：overall（不限语言）、Python、TypeScript、Rust、C++、C、Java、Go、Lua。overall 始终自动包含。
+默认抓取语言：overall（不限语言）、Python、TypeScript、Rust、C++、C、Java、Go、Lua、Zig。overall 始终自动包含。可在仓库根 `config.json` 的 `github.default_languages` 中调整。
 
 ```bash
-# 默认抓取（overall + 8 种语言，daily+weekly+monthly）
+# 默认抓取（overall + 9 种语言，daily+weekly+monthly）
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/github_trending.py
 
 # 指定语言（overall 仍会自动包含，仍获取三个时间段）
@@ -63,7 +63,7 @@ uv pip install -r {baseDir}/requirements.txt --python {baseDir}/.venv/bin/python
 ```
 
 **参数**:
-- `--languages`: 逗号分隔的语言列表（默认: `Python,TypeScript,Rust,C++,C,Java,Go,Lua`，overall 始终自动包含）
+- `--languages`: 逗号分隔的语言列表（默认: `Python,TypeScript,Rust,C++,C,Java,Go,Lua,Zig`，overall 始终自动包含）
 - `--since`: 逗号分隔的时间段（默认: `daily,weekly,monthly`，即同时获取三个时间段）
 - `--limit`: 每个语言的最大条目数 (默认 10)
 - `--json`: JSON 格式输出（按时间段分组为 `{"daily": [...], "weekly": [...], "monthly": [...]}`)
@@ -84,10 +84,10 @@ uv pip install -r {baseDir}/requirements.txt --python {baseDir}/.venv/bin/python
 
 > 注意：RSS 端点不包含 score（点赞数）和评论数。排序由 Reddit 服务端完成（hot/top/new 等）。
 
-默认抓取以下 subreddit：`algotrading`, `ArtificialIntelligence`, `browsers`, `ChatGPTCoding`, `CLine`, `ComputerVision`, `java`, `LanguageTechnology`, `LLM`, `MachineLearning`, `quant`, `robloxgamedev`, `rust`。task 描述中可指定其他 subreddit 覆盖默认列表。
+默认抓取列表由 `config.json` 的 `reddit.categories` 派生（扁平化 + 去重 + 大小写不敏感排序），覆盖 AI / LLM、Local LLM、ML / CV / NLP、AI Agent、Vibe Coding、量化交易、游戏开发、编程语言、Browser 等分类，共约 29 个 subreddit。要新增或调整分类与 subreddit，直接编辑 `config.json` 即可，`reddit.py` 与 `reddit_dedup.py` 共享同一份配置。task 描述中也可显式指定 subreddit 覆盖默认列表。
 
 ```bash
-# 默认抓取（13 个 subreddit，hot 排序）
+# 默认抓取（约 29 个 subreddit，hot 排序）
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit.py posts --sort hot --limit 10
 
 # 指定 subreddit
@@ -229,11 +229,39 @@ export PRODUCTHUNT_API_TOKEN="your_token_here"
 - `topics`: 话题列表
 - `thumbnail`: 缩略图 URL
 
+## 选择性执行
+
+agent 必须根据用户的措辞推断**两个独立维度**的执行范围：
+
+**维度 1：数据源选择**
+
+- 默认：4 个源全部跑（GitHub Trending、Hacker News、Reddit、Product Hunt）
+- 用户显式提到具体源名（"GitHub trending"、"HN"、"Hacker News"、"Reddit"、"r/...", "Product Hunt"、"PH"）→ 仅跑被提到的子集
+
+**维度 2：产出类型（两层）**
+
+| 类型 | 触发 | 行为 |
+|------|------|------|
+| **全量报告**（默认） | 默认行为 | 每个跑过的源生成一份完整 Markdown 列表，每条 item 含标题 + 链接 + ~100 字描述（详见下文【全量报告内容规范】） |
+| **Top 深度解读**（opt-in） | "深度解读"、"详细分析"、"调研"、"Top 深度"、"deep dive" 等关键词 | 在 fetch 之后追加跑 dedup 找出今日新条目的 Top N，对每个 top item 做深度调研，按【结构 A/B】输出 400-600 字长文 |
+
+**触发词→执行方案示例**：
+
+| 用户表达 | 数据源 | 产出类型 |
+|---------|--------|---------|
+| "看下今日新闻" / "更新一下" | 全部 4 个 | 全量报告 |
+| "看一下 Hacker News" | 仅 HN | 全量报告 |
+| "GitHub trending 深度解读" | 仅 GitHub | 全量报告 + Top 深度解读 |
+| "对今天的 Reddit Top 做调研" | 仅 Reddit | Top 深度解读（深度解读隐含产出，可不重复出全量） |
+| "今天有什么值得深度看的" | 全部 4 个 | 全量报告 + Top 深度解读 |
+
+> 不确定时，倾向"全部源 + 仅全量报告"作为安全默认。
+
 ## 执行策略
 
 **必须使用 subagent 并行执行各数据源脚本**，以提高效率。
 
-为每个数据源（GitHub Trending、Reddit、Hacker News、Product Hunt）启动独立的 subagent，使用 `subagent_type=Bash` 并行执行脚本。
+为每个被选中的数据源启动独立的 subagent，使用 `subagent_type=Bash` 并行执行脚本。
 
 示例：
 ```python
@@ -247,15 +275,11 @@ Task(
 
 等待所有 subagent 完成后，收集各自输出的 JSON 数据，然后进行格式化和写入。
 
-## 输出规范
+## 全量报告内容规范
 
 **输出路径**: `{workDir}/news-monitor/`
 
-**文件命名**: `yyyy-mm-dd_HH.md`
-
-例如：
-- 2026年3月4日16点 → `2026-03-04_16.md`
-- 2026年3月5日09点 → `2026-03-05_09.md`
+**文件命名**: `yyyy-mm-dd_HH.md`（例：`2026-03-04_16.md`、`2026-03-05_09.md`）
 
 ### 时间范围
 
@@ -271,14 +295,29 @@ Task(
 
 > GitHub Trending **始终获取全部三个时间段**，Product Hunt 只获取每日热门（top 30），均不受用户指定的时间范围影响。
 
+### 每条 item 的内容标准
+
+报告中**每一条 item 必须包含三要素**：
+
+1. **标题**：使用源数据中的 `title` / `name` / `full_name`
+2. **链接**：使用源数据中的 `url` / `html_url` / `permalink`
+3. **~100 字（约 5 句）描述**：由 agent **对每条 item 调用一次轻量级 `web_fetch`** 抓取目标页面，从首屏正文 / README / OG description / 摘要中提取要点后用中文压缩生成
+
+**抓取与回退规则**：
+
+- 描述**不能凭空编造**，必须基于 `web_fetch` 抓取到的真实内容
+- 若 `web_fetch` 失败、超时或返回内容不足以提炼，回退到使用 fetch 脚本本身返回的 `description` / `selftext` / `tagline` 字段，并在描述末尾加注 `(摘自 raw)`
+- **强烈建议用 subagent 并行抓取所有 item 的页面**（每个 item 一个 Task），避免串行慢
+
 ### 写入要求
 
 脚本只输出到 stdout。agent 必须：
 
-1. 收集所有脚本输出
-2. 格式化为 markdown 报告
-3. 确保输出目录存在（`mkdir -p {workDir}/news-monitor/`）
-4. 将报告写入 `{workDir}/news-monitor/yyyy-mm-dd_HH.md`
+1. 收集所有 fetch 脚本的 JSON 输出
+2. 对每条 item 并行调用 `web_fetch` 生成 ~100 字描述
+3. 拼装为 markdown 报告
+4. 确保输出目录存在（`mkdir -p {workDir}/news-monitor/`）
+5. 写入 `{workDir}/news-monitor/yyyy-mm-dd_HH.md`
 
 ### 完整性
 
@@ -301,6 +340,86 @@ Task(
 **时间戳**：与汇总报告 `yyyy-mm-dd_HH.md` 使用相同的时间戳，确保可追溯。
 
 **执行顺序**：
-1. 并行执行所有脚本获取 JSON 数据
+1. 并行执行所有 fetch 脚本获取 JSON 数据
 2. 保存各数据源的 raw JSON 文件（带时间后缀）
-3. 格式化并写入汇总报告 md 文件
+3. 并行调用 `web_fetch` 为每条 item 生成 ~100 字描述
+4. 拼装并写入汇总报告 md 文件
+
+## 去重与 Top 深度解读
+
+仅在用户触发"深度解读"等关键词时执行此管道。
+
+### dedup 脚本（中间步骤）
+
+`scripts/{github,hackernews,producthunt,reddit}_dedup.py` 是 4 个独立的 dedup 工具，用来从今日 raw JSON 中筛出"过去 N 天里没出现过"的新条目并取 Top N。它们的角色是 Top 深度解读管道的中间步骤，**不直接面向用户**。
+
+**统一 CLI**：
+
+| 参数 | 说明 |
+|------|------|
+| `--input PATH` / `-i PATH` | Raw JSON 输入文件；省略或传 `-` 则从 stdin 读 |
+| `--top N` | Top N（默认 10）。Reddit 是按 category 各 Top N |
+| `--json` | 输出 JSON（默认 Markdown）。**深度解读流程必须用 `--json`**，方便 agent 解析后驱动 |
+| `--no-save` | 干跑：不写入今日 snapshot |
+
+**Snapshot（去重状态）由脚本自管**，agent 不需要传任何路径：
+
+- 目录：`config.json` 的 `dedup.snapshot_dir`（默认 `~/.openclaw/workspace/news-monitor/fullset`）
+- 加载策略：扫该目录找 `{source}_fullset_YYYY-MM-DD.json`，取**最近 `dedup.lookback_days`（默认 14）天内、且日期早于今天**的最新一份作为基线 → 找不到则空集（→ 全部视为新）→ 即使断 1-13 天也不会"穿透"重新推荐之前出现过的内容
+- 同一天多次运行结果稳定（基线总是排除今天的快照）
+- 主流程结束后自动写 `{source}_fullset_{today}.json`（除非 `--no-save`）
+- fullset 中的值是 `last_seen_date`，目前未被消费，留作未来 N 天过期清理使用
+- 如需 bootstrap 历史 fullset，可单独调用 `dedup_common.bootstrap_from_raw`
+
+### 调用模式
+
+```bash
+# 1. fetch raw JSON 并落盘
+{baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit.py posts --sort top --time day --limit 25 --json \
+    > {workDir}/news-monitor/raw/reddit_2026-04-18_14.json
+
+# 2. dedup 找出 Top N（JSON 输出方便后续解析）
+{baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit_dedup.py \
+    --input {workDir}/news-monitor/raw/reddit_2026-04-18_14.json \
+    --json > /tmp/reddit_top.json
+
+# 3. agent 解析 /tmp/reddit_top.json，对每个 top item 启 subagent 做深度调研
+#    （web_fetch / web-chat / last30days），按【结构 B】输出长文到：
+#    {workDir}/news-monitor/deep_dive/2026-04-18_14/reddit/{category}/{slug}.md
+```
+
+### 深度调研要求
+
+- 单篇 **≥400-600 字**，按下文【结构 A】或【结构 B】组织
+- 输出目录：`{workDir}/news-monitor/deep_dive/yyyy-mm-dd_HH/{source}/`
+  - Reddit 再加一级 category 子目录，例如 `.../deep_dive/2026-04-18_14/reddit/AI%20%2F%20LLM/foo.md`
+- 调研工具：`web_fetch` / `browser` / `web-chat` / `last30days`（按需组合）
+- 每个 top item 用一个 subagent 独立调研 → 并行加速
+
+### 【结构 A】针对开源项目（GitHub）
+
+1. **定位与痛点剖析**：项目是什么？解决什么具体的开发痛点？面向哪类用户？
+2. **核心架构与技术细节**：技术栈？独特工程设计？（必须 `web_fetch` 拉取 README + `web-chat` 做深度解析）
+3. **竞品对比与生态站位**：替代方案？相对优劣势？在所属生态中的位置？
+4. **开发者反馈与局限性**：社区评价、issue 中暴露的局限？
+5. **附带链接**：GitHub Repo + 官网 / 文档（如有）
+
+### 【结构 B】针对新闻 / 帖子 / 产品（HN, Reddit, Product Hunt）
+
+1. **事件背景**：核心诉求 / 事件背景，发生了什么？为什么现在出现？
+2. **核心观点 / 产品机制**：核心主张或产品的运行机制（深度查阅原文 / 官网 / Demo）
+3. **社区热议与争议点**：**必须深度阅读评论区**，举 2-4 个具体讨论例子，正反方意见 pros / cons 对立必须体现
+4. **行业影响与未来展望**：长远影响、相关趋势
+5. **附带链接**：原帖 + 原始新闻 / 产品链接（外部 URL，如有）
+
+## 配置文件简介
+
+仓库根的 `config.json` 集中管理所有可调项，按数据源分区：
+
+- `github`：`default_languages`、`language_colors`
+- `hackernews`：`page_paths`、`default_pages`、`default_limit`、`default_min_points`
+- `reddit`：`redlib_bases`、`category_order`、`categories`（**`reddit.py` 的默认抓取列表由这里派生**，避免与 `reddit_dedup.py` 漂移）
+- `producthunt`：`default_limit`、`default_topic`
+- `dedup`：`snapshot_dir`（支持 `~`）、`lookback_days`
+
+**Fallback 策略**：`config.json` 不存在、某段或某键缺失，脚本均自动回退到代码内 fallback 常量（行为与无配置文件时完全一致）。CLI 参数依然存在并且优先级高于配置文件。`config.json` 中**不放任何敏感信息**（如 `PRODUCTHUNT_API_TOKEN` 仍走环境变量）。

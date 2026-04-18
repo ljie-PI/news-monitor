@@ -1,0 +1,76 @@
+{
+  "github": {
+    "default_languages": [
+      "Python",
+      "TypeScript",
+      "Rust",
+      "C++",
+      "C",
+      "Java",
+      "Go",
+      "Lua",
+      "Zig"
+    ],
+    "language_colors": {
+      "Python": "#3572A5",
+      "TypeScript": "#2b7489",
+      "JavaScript": "#f1e05a",
+      "Go": "#00ADD8",
+      "Rust": "#dea584",
+      "Java": "#b07219",
+      "C++": "#f34b7d",
+      "C": "#555555",
+      "Ruby": "#701516",
+      "Swift": "#fa7343",
+      "Kotlin": "#A97BFF",
+      "Lua": "#000080",
+      "Zig": "#ec915c"
+    }
+  },
+  "hackernews": {
+    "page_paths": {
+      "news": "/news",
+      "front": "/front",
+      "show": "/show"
+    },
+    "default_pages": ["news", "front", "show"],
+    "default_limit": 100,
+    "default_min_points": 50
+  },
+  "reddit": {
+    "redlib_bases": [
+      "https://redlib.privacyredirect.com"
+    ],
+    "category_order": [
+      "AI / LLM",
+      "Local LLM",
+      "ML / CV / NLP",
+      "AI Agent",
+      "Vibe Coding",
+      "量化交易",
+      "游戏开发",
+      "编程语言",
+      "Browser",
+      "Other"
+    ],
+    "categories": {
+      "AI / LLM": ["ChatGPT", "ClaudeAI", "LLM", "artificial"],
+      "Local LLM": ["LocalLLaMA", "LocalLLM", "unsloth"],
+      "ML / CV / NLP": ["MachineLearning", "computervision", "LanguageTechnology"],
+      "AI Agent": ["AI_Agents", "openclaw", "OpenClawUsers"],
+      "Vibe Coding": ["ClaudeCode", "CLine", "GithubCopilot", "opencodeCLI", "vibecoding"],
+      "量化交易": ["algotrading", "quant"],
+      "游戏开发": ["godot", "IndieDev", "IndieGaming", "robloxgamedev", "aigamedev"],
+      "编程语言": ["rust", "java", "lua"],
+      "Browser": ["browsers"]
+    }
+  },
+  "producthunt": {
+    "default_limit": 30,
+    "default_topic": null
+  },
+  "dedup": {
+    "snapshot_dir": "~/.openclaw/workspace/news-monitor/fullset",
+    "lookback_days": 14
+  }
+}

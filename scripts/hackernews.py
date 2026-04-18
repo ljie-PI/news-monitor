@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 import requests
 from bs4 import BeautifulSoup
 
+from _config import get_section
+
 BASE_URL = "https://news.ycombinator.com"
 
 HEADERS = {
@@ -32,15 +34,18 @@ HEADERS = {
     ),
 }
 
-PAGE_PATHS = {
+_HN_CFG = get_section("hackernews")
+
+# Override via config.json: hackernews.{page_paths,default_pages,default_limit,default_min_points}
+PAGE_PATHS = _HN_CFG.get("page_paths") or {
     "news": "/news",
     "front": "/front",
     "show": "/show",
 }
 
-DEFAULT_PAGES = ["news", "front", "show"]
-DEFAULT_LIMIT = 100
-DEFAULT_MIN_POINTS = 50
+DEFAULT_PAGES = _HN_CFG.get("default_pages") or ["news", "front", "show"]
+DEFAULT_LIMIT = _HN_CFG.get("default_limit") or 100
+DEFAULT_MIN_POINTS = _HN_CFG.get("default_min_points") or 50
 MAX_WORKERS = 10
 REQUEST_DELAY = 0.5  # seconds between sequential requests per page type
 
