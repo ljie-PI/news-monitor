@@ -80,6 +80,7 @@
   },
   "dedup": {
     "snapshot_dir": "~/.openclaw/workspace/news-monitor/fullset",
-    "lookback_days": 14
+    "lookback_days": 14,
+    "expiry_days": 90
   }
 }

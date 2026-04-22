@@ -431,6 +431,6 @@ Task(
 - `hackernews`：`page_paths`、`default_pages`、`default_limit`、`default_min_points`
 - `reddit`：`redlib_bases`、`category_order`、`categories`（**`reddit.py` 的默认抓取列表由这里派生**，避免与 `reddit_dedup.py` 漂移）
 - `producthunt`：`default_limit`、`default_topic`
-- `dedup`：`snapshot_dir`（支持 `~`）、`lookback_days`
+- `dedup`：`snapshot_dir`（支持 `~`）、`lookback_days`、`expiry_days`（fullset 中 `last_seen_date` 超过此天数的 key 会在 `update_fullset` 时被自动清理，默认 90）
 
 **Fallback 策略**：`config.json` 不存在、某段或某键缺失，脚本均自动回退到代码内 fallback 常量（行为与无配置文件时完全一致）。CLI 参数依然存在并且优先级高于配置文件。`config.json` 中**不放任何敏感信息**（如 `PRODUCTHUNT_API_TOKEN` 仍走环境变量）。

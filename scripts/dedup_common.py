@@ -18,9 +18,9 @@ Saving strategy
 ---------------
 At the end of a run, write `{source}_fullset_{today}.json` containing only the
 item keys that actually appeared in this run's Top-N output. The value stored
-for each key is the run's date (`last_seen_date`); it is reserved for future
-N-day expiry / cleanup but is not consumed by current dedup logic — only key
-existence matters today.
+for each key is the run's date (`last_seen_date`); keys whose `last_seen_date`
+is older than `dedup.expiry_days` (default 90) are pruned during each
+`update_fullset` call, preventing unbounded growth.
 """
 
 import json
@@ -40,14 +40,20 @@ _DEFAULT_SNAPSHOT_DIR = "~/.openclaw/workspace/news-monitor/fullset"
 _DEFAULT_LOOKBACK_DAYS = 14
 
 
-def _dedup_cfg() -> tuple[str, int]:
-    """Return (snapshot_dir, lookback_days), with config fallbacks."""
+_DEFAULT_EXPIRY_DAYS = 90
+
+
+def _dedup_cfg() -> tuple[str, int, int]:
+    """Return (snapshot_dir, lookback_days, expiry_days), with config fallbacks."""
     cfg = get_section("dedup")
     snapshot_dir = cfg.get("snapshot_dir") or _DEFAULT_SNAPSHOT_DIR
     lookback = cfg.get("lookback_days")
     if not isinstance(lookback, int) or lookback <= 0:
         lookback = _DEFAULT_LOOKBACK_DAYS
-    return os.path.expanduser(str(snapshot_dir)), lookback
+    expiry = cfg.get("expiry_days")
+    if not isinstance(expiry, int) or expiry <= 0:
+        expiry = _DEFAULT_EXPIRY_DAYS
+    return os.path.expanduser(str(snapshot_dir)), lookback, expiry
 
 
 def get_snapshot_dir() -> str:
@@ -58,6 +64,11 @@ def get_snapshot_dir() -> str:
 def get_lookback_days() -> int:
     """Configured lookback window in days."""
     return _dedup_cfg()[1]
+
+
+def get_expiry_days() -> int:
+    """Configured expiry threshold in days for fullset pruning."""
+    return _dedup_cfg()[2]
 
 
 def today_str() -> str:
@@ -96,7 +107,7 @@ def load_latest_snapshot(
     if today is None:
         today = today_str()
     if snapshot_dir is None or lookback_days is None:
-        cfg_dir, cfg_lookback = _dedup_cfg()
+        cfg_dir, cfg_lookback, _ = _dedup_cfg()
         if snapshot_dir is None:
             snapshot_dir = cfg_dir
         if lookback_days is None:
@@ -173,13 +184,30 @@ def update_fullset(
     key_funcs: Callable[[Any], Iterable[str]],
     today: str | None = None,
 ) -> None:
-    """Mark each item's keys as seen on `today` (in place)."""
+    """Mark each item's keys as seen on `today` (in place), then prune expired keys."""
     if today is None:
         today = today_str()
     for item in items:
         for key in key_funcs(item):
             if key:
                 fullset[key] = today
+
+    expiry_days = get_expiry_days()
+    cutoff_dt = datetime.strptime(today, "%Y-%m-%d") - timedelta(days=expiry_days)
+    expired = [
+        k for k, v in fullset.items()
+        if _is_expired(v, cutoff_dt)
+    ]
+    for k in expired:
+        del fullset[k]
+
+
+def _is_expired(date_str: str, cutoff_dt: datetime) -> bool:
+    """Return True if date_str parses to a date strictly before cutoff_dt."""
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d") < cutoff_dt
+    except (ValueError, TypeError):
+        return False
 
 
 def bootstrap_from_raw(
