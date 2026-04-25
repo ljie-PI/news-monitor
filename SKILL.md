@@ -389,28 +389,28 @@ Task(
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit.py posts --sort top --time day --limit 25 --json \
     > {workDir}/news-monitor/raw/reddit_2026-04-18_14.json
 
-# 2. dedup 找出 Top 15（多取 50%，为第 3 步过滤留余量）
+# 2. dedup 找出 Top ⌈N×1.5⌉（多取 50%，为第 3 步过滤留余量）
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit_dedup.py \
     --input {workDir}/news-monitor/raw/reddit_2026-04-18_14.json \
-    --top 15 --json > /tmp/reddit_top.json
+    --top <N×1.5 向上取整> --json > /tmp/reddit_top.json
 
-# 3. ⚠️ 话题过滤 + 截取 Top 10（必须在启动深度调研之前执行）
+# 3. ⚠️ 话题过滤 + 截取 Top N（必须在启动深度调研之前执行）
 #    agent 解析 dedup JSON，逐条检查 title + description，
 #    丢弃不符合话题范围的条目（详见下方【话题过滤规则】），
-#    然后从过滤结果中取前 10 条进入深度调研
+#    然后从过滤结果中取前 N 条进入深度调研
 
-# 4. 对过滤后的 Top 10 item 启 subagent 做深度调研
+# 4. 对过滤后的 Top N item 启 subagent 做深度调研
 #    （web_fetch / web-chat / last30days），按【结构 B】输出长文到：
 #    {workDir}/news-monitor/deep_dive/2026-04-18_14/reddit/{category}/{slug}.md
 ```
 
-> **关键**：dedup `--top 15` 多取 50%，过滤后截取前 10 条，确保最终进入 deep dive 的条目数量接近 10。
+> **关键**：dedup `--top ⌈N×1.5⌉` 多取 50%，过滤后截取前 N 条，确保最终进入 deep dive 的条目数量接近 N。N 默认为 10（即 dedup 取 15，过滤后取 10）。
 
 ### ⚠️ 话题过滤规则（第 3 步，必须执行）
 
 **这一步是强制的。** 跳过此步会导致深度调研中混入社会舆论等不相关内容。
 
-agent 在拿到 dedup Top 15 JSON 后、启动任何深度调研 subagent 之前，**必须逐条检查**每个候选 item 的 title + description/selftext/tagline，只保留符合话题范围的条目，**然后取前 10 条**进入深度调研：
+agent 在拿到 dedup Top ⌈N×1.5⌉ JSON 后、启动任何深度调研 subagent 之前，**必须逐条检查**每个候选 item 的 title + description/selftext/tagline，只保留符合话题范围的条目，**然后取前 N 条**进入深度调研：
 
 **默认保留**（用户未指定时）：
 - ✅ AI 模型、机器学习、深度学习
