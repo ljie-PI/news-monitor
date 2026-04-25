@@ -394,10 +394,41 @@ Task(
     --input {workDir}/news-monitor/raw/reddit_2026-04-18_14.json \
     --json > /tmp/reddit_top.json
 
-# 3. agent 解析 /tmp/reddit_top.json，对每个 top item 启 subagent 做深度调研
+# 3. ⚠️ 话题过滤（必须在启动深度调研之前执行）
+#    agent 解析 dedup JSON，逐条检查 title + description，
+#    丢弃不符合话题范围的条目（详见下方【话题过滤规则】）
+
+# 4. 对过滤后的每个 item 启 subagent 做深度调研
 #    （web_fetch / web-chat / last30days），按【结构 B】输出长文到：
 #    {workDir}/news-monitor/deep_dive/2026-04-18_14/reddit/{category}/{slug}.md
 ```
+
+### ⚠️ 话题过滤规则（第 3 步，必须执行）
+
+**这一步是强制的。** 跳过此步会导致深度调研中混入社会舆论等不相关内容。
+
+agent 在拿到 dedup Top N JSON 后、启动任何深度调研 subagent 之前，**必须逐条检查**每个候选 item 的 title + description/selftext/tagline，只保留符合话题范围的条目：
+
+**默认保留**（用户未指定时）：
+- ✅ AI 模型、机器学习、深度学习
+- ✅ AI 产品、开发工具、DevOps
+- ✅ 开源项目、技术架构、系统设计
+- ✅ 编程语言、框架、库、SDK
+- ✅ 硬件/芯片（与 AI 或开发相关的）
+
+**默认排除**：
+- ❌ 社会舆论、政策法规（如"XX国禁止YY"）
+- ❌ 政治、地缘政治
+- ❌ 文学、历史、哲学散文
+- ❌ 娱乐、体育
+- ❌ 纯商业/投融资新闻（无技术细节的）
+- ❌ 招聘、求职、职场文化
+
+**判断标准**：看 item 的核心内容是否在讨论技术本身。例如"Norway bans social media for under-16"是社会政策 → 排除；"Why I Write (Orwell 1946)"是文学 → 排除；"DeepSeek V4"是 AI 模型 → 保留。
+
+**用户覆盖**：用户可在 task 中显式指定话题偏好（如"只看量化交易"、"包含游戏开发"），此时以用户指定为准。
+
+> 此过滤**仅影响 deep dive 选题**，不影响全量报告。
 
 ### 深度调研要求
 
@@ -406,16 +437,6 @@ Task(
   - Reddit 再加一级 category 子目录，例如 `.../deep_dive/2026-04-18_14/reddit/AI%20%2F%20LLM/foo.md`
 - 调研工具：`web_fetch` / `browser` / `web-chat` / `last30days`（按需组合）
 - 每个 top item 用一个 subagent 独立调研 → 并行加速
-
-### 深度选题过滤
-
-dedup 输出 Top N 后、启动深度调研 subagent 之前，agent **必须**对候选条目做一轮话题相关性筛选：
-- **默认保留话题**（用户未指定时）：AI 模型、AI 产品、开发工具、开源项目、技术架构、编程语言、框架/库
-- **默认排除话题**：社会舆论、政治、娱乐八卦、体育、招聘/求职
-
-**筛选方式**：agent 根据每条候选的 title + description/selftext/tagline 判断是否属于保留话题。不确定时倾向保留。
-
-**用户覆盖**：用户可在 task 中显式指定感兴趣的话题（如"只看量化交易相关"、"包含游戏开发"），此时以用户指定为准，覆盖默认规则。
 
 ### 【结构 A】针对开源项目（GitHub）
 
