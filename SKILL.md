@@ -395,7 +395,7 @@ Task(
     --top <N×1.5 向上取整> --json > /tmp/reddit_top.json
 
 # 3. ⚠️ 话题过滤 + 截取 Top N（必须在启动深度调研之前执行）
-#    agent 解析 dedup JSON，逐条检查 title + description，
+#    agent 解析 dedup JSON，逐条检查 title + description/selftext/tagline
 #    丢弃不符合话题范围的条目（详见下方【话题过滤规则】），
 #    然后从过滤结果中取前 N 条进入深度调研
 
