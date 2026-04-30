@@ -418,18 +418,19 @@ Task(
 
 ### 调用步骤
 1. fetch raw JSON 并落盘
-```bash
-{baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit.py posts --sort top --time day --limit 25 --json \
-    > {workDir}/news-monitor/raw/reddit_2026-04-18_14.json
-```
+
+    ```bash
+    {baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit.py posts --sort top --time day --limit 25 --json \
+        > {workDir}/news-monitor/raw/reddit_2026-04-18_14.json
+    ```
 
 2. dedup 找出 Top ⌈N×2⌉
-```bash
-{baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit_dedup.py \
-    --input {workDir}/news-monitor/raw/reddit_2026-04-18_14.json \
-    --top <N×2> --json > /tmp/reddit_top.json
-```
 
+    ```bash
+    {baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit_dedup.py \
+        --input {workDir}/news-monitor/raw/reddit_2026-04-18_14.json \
+        --top <N×2> --json > /tmp/reddit_top.json
+    ```
 3. 话题过滤 + 截取 Top N
     - 解析 dedup output JSON，逐条检查 title + description/selftext/tagline
     - 参考**话题过滤规则**丢弃不符合话题范围的条目
