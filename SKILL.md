@@ -393,7 +393,7 @@ Task(
 
 ### 深度调研要求
 
-- 取前 N 条**进入深度调研
+- 取前 N 条进入深度调研
 - 单篇 **400-600 字**，按下文【结构 A】或【结构 B】组织
 - 输出目录：`{workDir}/news-monitor/deep_dive/yyyy-mm-dd_HH/{source}/`
   - Reddit 再加一级 category 子目录，例如 `.../deep_dive/2026-04-18_14/reddit/AI%20%2F%20LLM/foo.md`
