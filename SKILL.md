@@ -356,11 +356,11 @@ Task(
 3. 并行调用 `web_fetch` 为每条 item 生成 ~100 字描述
 4. 按平台拼装并分别写入 4 份 per-source md 文件 `{source}_yyyy-mm-dd_HH.md`
 
-## 去重与 Top 深度解读
+## 去重、过滤与深度解读
 
 仅在用户触发"深度解读"等关键词时执行此管道。
 
-### dedup 脚本（中间步骤）
+### 去重脚本
 
 `scripts/{github,hackernews,producthunt,reddit}_dedup.py` 是 4 个独立的 dedup 工具，用来从今日 raw JSON 中筛出"过去 N 天里没出现过"的新条目并取 Top N。它们的角色是 Top 深度解读管道的中间步骤，**不直接面向用户**。
 
@@ -382,66 +382,25 @@ Task(
 - fullset 中的值是 `last_seen_date`，目前未被消费，留作未来 N 天过期清理使用
 - 如需 bootstrap 历史 fullset，可单独调用 `dedup_common.bootstrap_from_raw`
 
-### 调用模式
+### 话题过滤规则
 
-```bash
-# 1. fetch raw JSON 并落盘
-{baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit.py posts --sort top --time day --limit 25 --json \
-    > {workDir}/news-monitor/raw/reddit_2026-04-18_14.json
-
-# 2. dedup 找出 Top ⌈N×1.5⌉（多取 50%，为第 3 步过滤留余量）
-{baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit_dedup.py \
-    --input {workDir}/news-monitor/raw/reddit_2026-04-18_14.json \
-    --top <N×1.5 向上取整> --json > /tmp/reddit_top.json
-
-# 3. ⚠️ 话题过滤 + 截取 Top N（必须在启动深度调研之前执行）
-#    agent 解析 dedup JSON，逐条检查 title + description/selftext/tagline
-#    丢弃不符合话题范围的条目（详见下方【话题过滤规则】），
-#    然后从过滤结果中取前 N 条进入深度调研
-
-# 4. 对过滤后的 Top N item 启 subagent 做深度调研
-#    （web_fetch / web-chat / last30days），按【结构 B】输出长文到：
-#    {workDir}/news-monitor/deep_dive/2026-04-18_14/reddit/{category}/{slug}.md
-```
-
-> **关键**：dedup `--top ⌈N×1.5⌉` 多取 50%，过滤后截取前 N 条，确保最终进入 deep dive 的条目数量接近 N。N 默认为 10（即 dedup 取 15，过滤后取 10）。
-
-### ⚠️ 话题过滤规则（第 3 步，必须执行）
-
-**这一步是强制的。** 跳过此步会导致深度调研中混入社会舆论等不相关内容。
-
-agent 在拿到 dedup Top ⌈N×1.5⌉ JSON 后、启动任何深度调研 subagent 之前，**必须逐条检查**每个候选 item 的 title + description/selftext/tagline，只保留符合话题范围的条目，**然后取前 N 条**进入深度调研：
-
-**默认保留**（用户未指定时）：
-- ✅ AI 模型、机器学习、深度学习
-- ✅ AI 产品、开发工具、DevOps
-- ✅ 开源项目、技术架构、系统设计
-- ✅ 编程语言、框架、库、SDK
-- ✅ 硬件/芯片（与 AI 或开发相关的）
-
-**默认排除**：
-- ❌ 社会舆论、政策法规（如"XX国禁止YY"）
+**必须逐条检查**每个候选 item 的 title + description/selftext/tagline，与以下话题直接或间接相关的都删除，**严格执行，从严处理**:
+- ❌ 社会、伦理
+- ❌ 政策、法规
 - ❌ 政治、地缘政治
-- ❌ 文学、历史、哲学散文
 - ❌ 娱乐、体育
-- ❌ 纯商业/投融资新闻（无技术细节的）
 - ❌ 招聘、求职、职场文化
-
-**判断标准**：看 item 的核心内容是否在讨论技术本身。例如"Norway bans social media for under-16"是社会政策 → 排除；"Why I Write (Orwell 1946)"是文学 → 排除；"DeepSeek V4"是 AI 模型 → 保留。
-
-**用户覆盖**：用户可在 task 中显式指定话题偏好（如"只看量化交易"、"包含游戏开发"），此时以用户指定为准。
-
-> 此过滤**仅影响 deep dive 选题**，不影响全量报告。
 
 ### 深度调研要求
 
-- 单篇 **≥400-600 字**，按下文【结构 A】或【结构 B】组织
+- 取前 N 条进入深度调研
+- 单篇 **400-600 字**，按下文【结构 A】或【结构 B】组织
 - 输出目录：`{workDir}/news-monitor/deep_dive/yyyy-mm-dd_HH/{source}/`
   - Reddit 再加一级 category 子目录，例如 `.../deep_dive/2026-04-18_14/reddit/AI%20%2F%20LLM/foo.md`
 - 调研工具：`web_fetch` / `browser` / `web-chat` / `last30days`（按需组合）
 - 每个 top item 用一个 subagent 独立调研 → 并行加速
 
-### 【结构 A】针对开源项目（GitHub）
+#### 【结构 A】针对开源项目（GitHub）
 
 1. **定位与痛点剖析**：项目是什么？解决什么具体的开发痛点？面向哪类用户？
 2. **核心架构与技术细节**：技术栈？独特工程设计？（必须 `web_fetch` 拉取 README + `web-chat` 做深度解析）
@@ -449,13 +408,35 @@ agent 在拿到 dedup Top ⌈N×1.5⌉ JSON 后、启动任何深度调研 subag
 4. **开发者反馈与局限性**：社区评价、issue 中暴露的局限？
 5. **附带链接**：GitHub Repo + 官网 / 文档（如有）
 
-### 【结构 B】针对新闻 / 帖子 / 产品（HN, Reddit, Product Hunt）
+#### 【结构 B】针对新闻 / 帖子 / 产品（HN, Reddit, Product Hunt）
 
 1. **事件背景**：核心诉求 / 事件背景，发生了什么？为什么现在出现？
 2. **核心观点 / 产品机制**：核心主张或产品的运行机制（深度查阅原文 / 官网 / Demo）
 3. **社区热议与争议点**：**必须深度阅读评论区**，举 2-4 个具体讨论例子，正反方意见 pros / cons 对立必须体现
 4. **行业影响与未来展望**：长远影响、相关趋势
 5. **附带链接**：原帖 + 原始新闻 / 产品链接（外部 URL，如有）
+
+### 调用步骤
+1. fetch raw JSON 并落盘
+
+    ```bash
+    {baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit.py posts --sort top --time day --limit 25 --json \
+        > {workDir}/news-monitor/raw/reddit_2026-04-18_14.json
+    ```
+
+2. dedup 找出 Top ⌈N×2⌉
+
+    ```bash
+    {baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit_dedup.py \
+        --input {workDir}/news-monitor/raw/reddit_2026-04-18_14.json \
+        --top <N×2> --json > /tmp/reddit_top.json
+    ```
+3. 话题过滤 + 截取 Top N
+    - 解析 dedup output JSON，逐条检查 title + description/selftext/tagline
+    - 参考**话题过滤规则**丢弃不符合话题范围的条目
+    - 然后从过滤结果中取前 N 条进入深度调研
+
+4. 参考**深度调研要求**启动 subagent 做深度调研, 输出到要求中指定的目录。
 
 ## 配置文件简介
 
