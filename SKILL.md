@@ -286,8 +286,17 @@ Task(
 
 1. **Fetch**：并行执行各数据源脚本，获取 raw JSON 并落盘
 2. **Dedup**：对每个源执行 dedup 脚本（`--top ⌈N×1.5⌉ --json`），找出新条目候选池
-3. **⚠️ 话题过滤**：agent **逐条审查**候选池中每个 item，**丢弃非技术条目**，仅保留前 N 条技术相关内容（详见下文【话题过滤规则】）。**这一步是强制的，不可跳过。**
-4. **Deep Dive**：对过滤后的 Top N 条目，每个启一个 subagent 做深度调研
+3. **⚠️ 话题过滤 → 写入 filtered JSON 文件**：
+   - agent **逐条审查**候选池中每个 item 的标题和描述
+   - 用 LLM 判断：该 item 的核心内容是否在讨论**技术本身**（模型、算法、工具、代码、架构、开源项目）
+   - **丢弃非技术条目**（社会舆论、政策法规、文学、娱乐、犯罪新闻、AI 恐慌炒作、招聘求职等）
+   - 从过滤结果中取前 N 条
+   - **必须将过滤结果写入文件** `{workDir}/news-monitor/raw/{source}_filtered_{timestamp}.json`
+   - **必须在 stdout 打印过滤决策摘要**（每条 item 标注 ✅ KEEP 或 ❌ DROP 及理由），便于审查
+   - 详细规则见下文【话题过滤规则】
+4. **Deep Dive**：**从 filtered JSON 文件读取**条目（不是从 dedup 输出），每个启一个 subagent 做深度调研
+
+> **⚠️ 禁止从 dedup 输出直接启动 deep dive subagent。** 必须先完成第 3 步生成 filtered JSON 文件，第 4 步从该文件读取。
 
 ## 全量报告内容规范
 
@@ -424,26 +433,28 @@ agent 在拿到 dedup 候选池 JSON 后、启动任何深度调研 subagent 之
 ### 调用模式
 
 ```bash
-# 1. fetch raw JSON 并落盘
+# Step 1. fetch raw JSON 并落盘
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit.py posts --sort top --time day --limit 25 --json \
     > {workDir}/news-monitor/raw/reddit_2026-04-18_14.json
 
-# 2. dedup 找出 Top ⌈N×1.5⌉（多取 50%，为第 3 步过滤留余量）
+# Step 2. dedup 找出 Top ⌈N×1.5⌉（多取 50%，为过滤留余量）
 {baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit_dedup.py \
     --input {workDir}/news-monitor/raw/reddit_2026-04-18_14.json \
-    --top <N×1.5 向上取整> --json > /tmp/reddit_top.json
+    --top <N×1.5 向上取整> --json > {workDir}/news-monitor/raw/reddit_dedup_2026-04-18_14.json
 
-# 3. ⚠️ 话题过滤 + 截取 Top N（必须在启动深度调研之前执行）
-#    agent 解析 dedup JSON，逐条检查 title + description/selftext/tagline
-#    丢弃不符合话题范围的条目（详见下方【话题过滤规则】），
-#    然后从过滤结果中取前 N 条进入深度调研
+# Step 3. ⚠️ 话题过滤（必须完成后才能进入 Step 4）
+#   agent 读取 dedup JSON，对每条 item 用 LLM 判断是否技术相关：
+#   - 逐条判断：该 item 核心是否讨论技术本身（模型/算法/工具/代码/架构/开源）？
+#   - 标注 ✅ KEEP 或 ❌ DROP（附理由），打印决策摘要到 stdout
+#   - 从 KEEP 的条目中取前 N 条
+#   - 将过滤结果写入:
+{workDir}/news-monitor/raw/reddit_filtered_2026-04-18_14.json
 
-# 4. 对过滤后的 Top N item 启 subagent 做深度调研
-#    （web_fetch / web-chat / last30days），按【结构 B】输出长文到：
-#    {workDir}/news-monitor/deep_dive/2026-04-18_14/reddit/{category}/{slug}.md
+# Step 4. 从 filtered JSON 读取，启 subagent 做深度调研
+#   ⚠️ 输入必须是 *_filtered_*.json，不是 *_dedup_*.json
 ```
 
-> **关键**：dedup `--top ⌈N×1.5⌉` 多取 50%，过滤后截取前 N 条，确保最终进入 deep dive 的条目数量接近 N。N 默认为 10（即 dedup 取 15，过滤后取 10）。
+> **关键**：dedup `--top ⌈N×1.5⌉` 多取 50%，过滤后截取前 N 条。N 默认为 10。**Step 4 的输入文件必须是 Step 3 产出的 filtered JSON，禁止直接使用 dedup 输出。**
 
 ### 深度调研要求
 
