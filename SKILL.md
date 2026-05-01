@@ -343,9 +343,9 @@ Task(
 **命名格式**: `{source}_{period}_yyyy-mm-dd_HH.json`
 
 例如：
-- `github_trending_daily_2026-03-07_16.json`、`github_trending_weekly_2026-03-07_16.json`
-- `hackernews_week_2026-03-07_16.json`
-- `reddit_week_2026-03-07_16.json`
+- `github_weekly_2026-03-07_16.json`、`github_daily_2026-03-07_16.json`
+- `hackernews_daily_2026-03-07_16.json`
+- `reddit_daily_2026-03-07_16.json`
 - `producthunt_daily_2026-03-07_16.json`、`producthunt_weekly_2026-03-07_16.json`
 
 **时间戳**：与同次运行的 per-source 报告 `{source}_yyyy-mm-dd_HH.md` 使用相同的时间戳，确保可追溯。
@@ -356,11 +356,13 @@ Task(
 3. 并行调用 `web_fetch` 为每条 item 生成 ~100 字描述
 4. 按平台拼装并分别写入 4 份 per-source md 文件 `{source}_yyyy-mm-dd_HH.md`
 
-## 去重、过滤与深度解读
+## 深度解读内容规范
 
-仅在用户触发"深度解读"等关键词时执行此管道。
+仅在用户触发"深度解读"等关键词时执行此管道。深度解读必须严格遵守去重、过滤和深度解读的执行要求。
 
-### 去重脚本
+### 去重要求
+
+输入路径为 fetch 脚本的输出 `~/.openclaw/workspace/news-monitor/raw/{source}_{period}_yyyy-mm-dd_HH.json`
 
 `scripts/{github,hackernews,producthunt,reddit}_dedup.py` 是 4 个独立的 dedup 工具，用来从今日 raw JSON 中筛出"过去 N 天里没出现过"的新条目并取 Top N。它们的角色是 Top 深度解读管道的中间步骤，**不直接面向用户**。
 
@@ -373,7 +375,7 @@ Task(
 | `--json` | 输出 JSON（默认 Markdown）。**深度解读流程必须用 `--json`**，方便 agent 解析后驱动 |
 | `--no-save` | 干跑：不写入今日 snapshot |
 
-**Snapshot（去重状态）由脚本自管**，agent 不需要传任何路径：
+**Snapshot 由脚本自管**，agent 不需要传任何路径：
 
 - 目录：`config.json` 的 `dedup.snapshot_dir`（默认 `~/.openclaw/workspace/news-monitor/fullset`）
 - 加载策略：扫该目录找 `{source}_fullset_YYYY-MM-DD.json`，取**最近 `dedup.lookback_days`（默认 14）天内、且日期早于今天**的最新一份作为基线 → 找不到则空集（→ 全部视为新）→ 即使断 1-13 天也不会"穿透"重新推荐之前出现过的内容
@@ -382,9 +384,9 @@ Task(
 - fullset 中的值是 `last_seen_date`，目前未被消费，留作未来 N 天过期清理使用
 - 如需 bootstrap 历史 fullset，可单独调用 `dedup_common.bootstrap_from_raw`
 
-### 话题过滤规则
+### 过滤要求
 
-**必须逐条检查**每个候选 item 的 title + description/selftext/tagline，与以下话题直接或间接相关的都删除，**严格执行，从严处理**:
+**必须逐条检查**每个候选 item 的 url/name/title/description/selftext/tagline 字段，去除任何与以下话题直接或间接相关的内容，**严格执行，从严处理**:
 - ❌ 社会、伦理
 - ❌ 政策、法规
 - ❌ 政治、地缘政治
@@ -395,10 +397,11 @@ Task(
 
 - 取前 N 条进入深度调研
 - 单篇 **400-600 字**，按下文【结构 A】或【结构 B】组织
-- 输出目录：`{workDir}/news-monitor/deep_dive/yyyy-mm-dd_HH/{source}/`
-  - Reddit 再加一级 category 子目录，例如 `.../deep_dive/2026-04-18_14/reddit/AI%20%2F%20LLM/foo.md`
 - 调研工具：`web_fetch` / `browser` / `web-chat` / `last30days`（按需组合）
-- 每个 top item 用一个 subagent 独立调研 → 并行加速
+- 使用 subagent 独立调研 → 并行加速，最多 5 个 subagent 并行
+- 输出目录：`{workDir}/news-monitor/deep_dive/yyyy-mm-dd_HH/{source}/{slug}.md`, `slug` 是 sanitized title (lowercase, hyphens, no special chars)
+  - GitHub, Product Hunt, Hacker News 输出例如 `{workDir}/news-monitor/deep_dive/2026-04-18_14/{github,producthunt,hackernews}/deepseek-v4.md`
+  - Reddit 再加一级 category 子目录，例如 `{workDir}/news-monitor/deep_dive/2026-04-18_14/reddit/AI%20%2F%20LLM/foo.md`
 
 #### 【结构 A】针对开源项目（GitHub）
 
@@ -415,28 +418,6 @@ Task(
 3. **社区热议与争议点**：**必须深度阅读评论区**，举 2-4 个具体讨论例子，正反方意见 pros / cons 对立必须体现
 4. **行业影响与未来展望**：长远影响、相关趋势
 5. **附带链接**：原帖 + 原始新闻 / 产品链接（外部 URL，如有）
-
-### 调用步骤
-1. fetch raw JSON 并落盘
-
-    ```bash
-    {baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit.py posts --sort top --time day --limit 25 --json \
-        > {workDir}/news-monitor/raw/reddit_2026-04-18_14.json
-    ```
-
-2. dedup 找出 Top ⌈N×2⌉
-
-    ```bash
-    {baseDir}/.venv/bin/python3 {baseDir}/scripts/reddit_dedup.py \
-        --input {workDir}/news-monitor/raw/reddit_2026-04-18_14.json \
-        --top <N×2> --json > /tmp/reddit_top.json
-    ```
-3. 话题过滤 + 截取 Top N
-    - 解析 dedup output JSON，逐条检查 title + description/selftext/tagline
-    - 参考**话题过滤规则**丢弃不符合话题范围的条目
-    - 然后从过滤结果中取前 N 条进入深度调研
-
-4. 参考**深度调研要求**启动 subagent 做深度调研, 输出到要求中指定的目录。
 
 ## 配置文件简介
 
