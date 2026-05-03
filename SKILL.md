@@ -380,13 +380,13 @@ Task(
 当用户指定 weekly 或 monthly 时间范围时，深度解读流程与默认（24h）不同：
 
 1. **Fetch 必须使用对应时间范围参数**（如 `reddit.py --sort top --time week`、`hackernews.py --start <7天前>`），产出带 `_weekly` 后缀的 raw 文件
-2. **跳过 dedup 步骤** — 周报/月报回顾该时间段最佳内容，不应排除已在日报中出现过的条目
+2. **跳过 dedup 步骤**
 3. **直接从 weekly raw 中按 score/votes/published 排序取 Top N** → 进入过滤 → deep dive
 4. **输入必须是当次 weekly fetch 产出的 raw 文件**（如 `reddit_daily_2026-05-03_10_weekly.json`），不得使用之前 daily 模式的 raw
 
 ### 去重要求（仅 24h 默认模式）
 
-**仅适用于默认时间范围（24h）。** 当用户指定 weekly 或 monthly 时间范围时，**跳过去重步骤**，直接按 score/votes/published 排序取 Top N 进入过滤。因为周报/月报的目的是回顾该时间段内的最佳内容，不应因为条目在之前的日报中出现过而被排除。
+**仅适用于默认时间范围（24h）。** 当用户指定 weekly 或 monthly 时间范围时，**跳过去重步骤**，直接按 score/votes/published 排序取 Top N 进入过滤。
 
 输入路径为 fetch 脚本的输出 `~/.openclaw/workspace/news-monitor/raw/{source}_{period}_yyyy-mm-dd_HH.json`
 
