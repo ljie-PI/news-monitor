@@ -317,9 +317,9 @@ Task(
 | 一个月 | `yyyy-mm-dd_HH_monthly` | `2026-05-03_10_monthly` |
 
 此后缀统一应用于：
-- 全量报告：`{source}_yyyy-mm-dd_HH_weekly.md`
-- Raw 数据：`{source}_{period}_yyyy-mm-dd_HH_weekly.json`
-- Deep dive 目录：`deep_dive/yyyy-mm-dd_HH_weekly/{source}/`
+- 全量报告：`{source}_yyyy-mm-dd_HH_{range}.md`
+- Raw 数据：`{source}_{period}_yyyy-mm-dd_HH_{range}.json`
+- Deep dive 目录：`deep_dive/yyyy-mm-dd_HH_{range}/{source}/`
 
 ### 每条 item 的内容标准
 
@@ -382,7 +382,7 @@ Task(
 1. **Fetch 必须使用对应时间范围参数**（如 `reddit.py --sort top --time week`、`hackernews.py --start <7天前>`），产出带 `_weekly` 后缀的 raw 文件
 2. **跳过 dedup 步骤**
 3. **直接从 weekly raw 中按 score/votes/published 排序取 Top N** → 进入过滤 → deep dive
-4. **输入必须是当次 weekly fetch 产出的 raw 文件**（如 `reddit_daily_2026-05-03_10_weekly.json`），不得使用之前 daily 模式的 raw
+4. **输入必须是当次 fetch 产出的 raw 文件**（如 `reddit_daily_2026-05-03_10_weekly.json`），不得使用之前 daily 模式的 raw
 
 ### 去重要求（仅 24h 默认模式）
 
