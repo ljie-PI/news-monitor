@@ -377,6 +377,8 @@ Task(
 
 ### 去重要求
 
+**仅适用于默认时间范围（24h）。** 当用户指定 weekly 或 monthly 时间范围时，**跳过去重步骤**，直接按 score/votes/published 排序取 Top N 进入过滤。因为周报/月报的目的是回顾该时间段内的最佳内容，不应因为条目在之前的日报中出现过而被排除。
+
 输入路径为 fetch 脚本的输出 `~/.openclaw/workspace/news-monitor/raw/{source}_{period}_yyyy-mm-dd_HH.json`
 
 `scripts/{github,hackernews,producthunt,reddit}_dedup.py` 是 4 个独立的 dedup 工具，用来从今日 raw JSON 中筛出"过去 N 天里没出现过"的新条目并取 Top N。它们的角色是 Top 深度解读管道的中间步骤，**不直接面向用户**。
