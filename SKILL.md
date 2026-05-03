@@ -306,6 +306,21 @@ Task(
 
 > GitHub Trending 和 Product Hunt **始终同时获取 daily 和 weekly 两个时间段**，均不受用户指定的时间范围影响。
 
+### 输出路径中的时间范围后缀
+
+当用户指定非默认时间范围时，所有输出路径的时间戳部分须追加后缀：
+
+| 时间范围 | 时间戳格式 | 示例 |
+|---------|----------|------|
+| 24h（默认）| `yyyy-mm-dd_HH` | `2026-05-03_10` |
+| 一周 | `yyyy-mm-dd_HH_weekly` | `2026-05-03_10_weekly` |
+| 一个月 | `yyyy-mm-dd_HH_monthly` | `2026-05-03_10_monthly` |
+
+此后缀统一应用于：
+- 全量报告：`{source}_yyyy-mm-dd_HH_weekly.md`
+- Raw 数据：`{source}_{period}_yyyy-mm-dd_HH_weekly.json`
+- Deep dive 目录：`deep_dive/yyyy-mm-dd_HH_weekly/{source}/`
+
 ### 每条 item 的内容标准
 
 报告中**每一条 item 必须包含三要素**：
