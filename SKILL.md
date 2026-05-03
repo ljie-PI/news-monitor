@@ -306,6 +306,21 @@ Task(
 
 > GitHub Trending 和 Product Hunt **始终同时获取 daily 和 weekly 两个时间段**，均不受用户指定的时间范围影响。
 
+### 输出路径中的时间范围后缀
+
+当用户指定非默认时间范围时，所有输出路径的时间戳部分须追加后缀：
+
+| 时间范围 | 时间戳格式 | 示例 |
+|---------|----------|------|
+| 24h（默认）| `yyyy-mm-dd_HH` | `2026-05-03_10` |
+| 一周 | `yyyy-mm-dd_HH_weekly` | `2026-05-03_10_weekly` |
+| 一个月 | `yyyy-mm-dd_HH_monthly` | `2026-05-03_10_monthly` |
+
+此后缀统一应用于：
+- 全量报告：`{source}_yyyy-mm-dd_HH_{range}.md`
+- Raw 数据：`{source}_{period}_yyyy-mm-dd_HH_{range}.json`
+- Deep dive 目录：`deep_dive/yyyy-mm-dd_HH_{range}/{source}/`
+
 ### 每条 item 的内容标准
 
 报告中**每一条 item 必须包含三要素**：
@@ -360,7 +375,18 @@ Task(
 
 仅在用户触发"深度解读"等关键词时执行此管道。深度解读必须严格遵守去重、过滤和深度解读的执行要求。
 
-### 去重要求
+### Weekly/Monthly 模式特殊规则
+
+当用户指定 weekly 或 monthly 时间范围时，深度解读流程与默认（24h）不同：
+
+1. **Fetch 必须使用对应时间范围参数**（如 `reddit.py --sort top --time week`、`hackernews.py --start <7天前>`），产出带 `_weekly` 后缀的 raw 文件
+2. **跳过 dedup 步骤**
+3. **直接从 weekly raw 中按 score/votes/published 排序取 Top N** → 进入过滤 → deep dive
+4. **输入必须是当次 fetch 产出的 raw 文件**（如 `reddit_daily_2026-05-03_10_weekly.json`），不得使用之前 daily 模式的 raw
+
+### 去重要求（仅 24h 默认模式）
+
+**仅适用于默认时间范围（24h）。** 当用户指定 weekly 或 monthly 时间范围时，**跳过去重步骤**，直接按 score/votes/published 排序取 Top N 进入过滤。
 
 输入路径为 fetch 脚本的输出 `~/.openclaw/workspace/news-monitor/raw/{source}_{period}_yyyy-mm-dd_HH.json`
 
